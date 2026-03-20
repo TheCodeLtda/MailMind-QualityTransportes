@@ -663,6 +663,27 @@ input:checked + .toggle-slider:before { transform: translateX(16px); }
 .summary-row span:last-child  { color: var(--text); font-weight: 500; font-family: monospace; font-size: 12px; }
 
 /* ============================================================
+   PAGINAÇÃO
+   ============================================================ */
+.pagination-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; border-top: 1px solid var(--border);
+  background: var(--surface); gap: 8px; flex-shrink: 0;
+}
+.pagination-info {
+  font-size: 12px; color: var(--text3);
+}
+.pagination-btns { display: flex; gap: 6px; }
+.page-btn {
+  padding: 5px 12px; font-size: 12px; font-weight: 500;
+  border-radius: 6px; border: 1px solid var(--border2);
+  background: var(--surface2); color: var(--text2);
+  cursor: pointer; transition: all 0.15s; font-family: var(--font-body);
+}
+.page-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ============================================================
    RESIZE HANDLES
    ============================================================ */
 .resize-handle {

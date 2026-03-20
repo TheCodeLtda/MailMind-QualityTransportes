@@ -72,6 +72,8 @@ const state = {
   connected:false, accessToken:null, emails:[], filteredEmails:[],
   selectedEmail:null, currentFilter:'all', currentFolder:null,
   currentView:'emails', rules:[], config:{}, chatHistory:[],
+  // Paginação
+  page: { current:1, nextLink:null, prevLinks:[], total:null, pageSize:50 },
 };
 
 const DEMO_EMAILS = [
@@ -251,23 +253,113 @@ function restoreToken() {
 // ============================================================
 // GRAPH API
 // ============================================================
-async function fetchEmails() {
+function buildEmailObj(m) {
+  const isHtml=(m.body?.contentType||'').toLowerCase()==='html';
+  return {
+    id:m.id, from:m.from?.emailAddress?.address||'', fromName:m.from?.emailAddress?.name||'',
+    to:(m.toRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean),
+    cc:(m.ccRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean),
+    subject:m.subject||'(sem assunto)', preview:m.bodyPreview||'',
+    bodyHtml:isHtml?m.body.content:wrapTextAsHtml(m.body?.content||''),
+    bodyText:stripHtml(m.body?.content||''),
+    date:m.receivedDateTime, dateFormatted:formatDate(m.receivedDateTime),
+    unread:!m.isRead, hasAttachments:m.hasAttachments||false,
+    importance:m.importance||'normal', folder:'Outros', tag:'', attachments:null,
+  };
+}
+
+const PAGE_SIZE = 50;
+const BASE_URL  = 'https://graph.microsoft.com/v1.0/me/messages'
+  + `?$top=${PAGE_SIZE}`
+  + '&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance'
+  + '&$orderby=receivedDateTime desc';
+
+async function fetchEmails(url) {
   if(!state.accessToken){showNotif('error','❌','Conecte sua conta Outlook primeiro');return;}
-  showStatus('Carregando e-mails do Outlook...');
+  showStatus('Carregando e-mails...');
   try {
-    const res=await fetch('https://graph.microsoft.com/v1.0/me/messages?$top=50&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance&$orderby=receivedDateTime desc',
-      {headers:{Authorization:`Bearer ${state.accessToken}`,'Content-Type':'application/json','Prefer':'outlook.body-content-type="html"'}});
+    const res=await fetch(url||BASE_URL, {
+      headers:{
+        Authorization:`Bearer ${state.accessToken}`,
+        'Content-Type':'application/json',
+        'Prefer':'outlook.body-content-type="html"',
+      }
+    });
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const data=await res.json();
-    state.emails=data.value.map(m=>{
-      const isHtml=(m.body?.contentType||'').toLowerCase()==='html';
-      return {id:m.id,from:m.from?.emailAddress?.address||'',fromName:m.from?.emailAddress?.name||'',to:(m.toRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean),cc:(m.ccRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean),subject:m.subject||'(sem assunto)',preview:m.bodyPreview||'',bodyHtml:isHtml?m.body.content:wrapTextAsHtml(m.body?.content||''),bodyText:stripHtml(m.body?.content||''),date:m.receivedDateTime,dateFormatted:formatDate(m.receivedDateTime),unread:!m.isRead,hasAttachments:m.hasAttachments||false,importance:m.importance||'normal',folder:'Outros',tag:'',attachments:null};
-    });
-    state.filteredEmails=[...state.emails];
+
+    state.emails         = data.value.map(buildEmailObj);
+    state.filteredEmails = [...state.emails];
+    state.page.nextLink  = data['@odata.nextLink'] || null;
+
+    // Busca total de não lidos (apenas na primeira página)
+    if (!url) {
+      state.page.current   = 1;
+      state.page.prevLinks = [];
+      fetchUnreadCount();
+    }
+
+    renderEmailList();
+    updateFolderCounts();
+    updateUnreadBadge();
+    renderPagination();
     hideStatus();
-    showNotif('success','✅',`${state.emails.length} e-mails carregados`);
-    if(loadConfig().autoClassify!==false) classifyAllEmails();
+    showNotif('success','✅',`${state.emails.length} e-mails carregados — página ${state.page.current}`);
+    if(!url && loadConfig().autoClassify!==false) classifyAllEmails();
   } catch(e) { hideStatus(); showNotif('error','❌','Erro ao carregar e-mails: '+e.message); }
+}
+
+async function fetchUnreadCount() {
+  try {
+    const res=await fetch(
+      'https://graph.microsoft.com/v1.0/me/messages/$count?$filter=isRead eq false',
+      {headers:{Authorization:`Bearer ${state.accessToken}`, ConsistencyLevel:'eventual'}}
+    );
+    if(res.ok) {
+      state.page.total=parseInt(await res.text())||null;
+      renderPagination();
+    }
+  } catch {}
+}
+
+function goNextPage() {
+  if(!state.page.nextLink) return;
+  // Salva URL atual para poder voltar
+  const currentUrl = state.page.current===1
+    ? null
+    : state.page.prevLinks[state.page.prevLinks.length-1]?._current;
+
+  state.page.prevLinks.push({ url: state.page.nextLink, _current: BASE_URL });
+  state.page.current++;
+  fetchEmails(state.page.nextLink);
+  document.getElementById('emailList').scrollTop=0;
+}
+
+function goPrevPage() {
+  if(state.page.current<=1) return;
+  state.page.prevLinks.pop();
+  state.page.current--;
+  const prevUrl = state.page.prevLinks.length>0
+    ? state.page.prevLinks[state.page.prevLinks.length-1].url
+    : null;
+  fetchEmails(prevUrl); // null = primeira página
+  document.getElementById('emailList').scrollTop=0;
+}
+
+function renderPagination() {
+  const bar=document.getElementById('paginationBar');
+  if(!bar) return;
+
+  const hasPrev = state.page.current > 1;
+  const hasNext = !!state.page.nextLink;
+  const totalTxt = state.page.total ? ` de ~${state.page.total.toLocaleString('pt-BR')}` : '';
+
+  bar.innerHTML=`
+    <div class="pagination-info">Página ${state.page.current}${totalTxt}</div>
+    <div class="pagination-btns">
+      <button class="page-btn" onclick="goPrevPage()" ${hasPrev?'':'disabled'}>← Anterior</button>
+      <button class="page-btn" onclick="goNextPage()" ${hasNext?'':'disabled'}>Próxima →</button>
+    </div>`;
 }
 async function fetchAttachments(emailId) {
   if(!state.accessToken) return [];
