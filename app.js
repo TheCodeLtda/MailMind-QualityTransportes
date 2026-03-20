@@ -20,50 +20,71 @@ const DEMO_EMAILS = [
     id: '1', from: 'joao.silva@empresa.com', fromName: 'João Silva',
     subject: 'Relatório Q1 2026 - Revisão necessária',
     preview: 'Segue em anexo o relatório do primeiro trimestre...',
-    body: 'Olá time,\n\nSegue em anexo o relatório do primeiro trimestre de 2026 para revisão. Precisamos finalizar até sexta-feira.\n\nPontos de atenção:\n- Faturamento abaixo do previsto em 12%\n- Custo operacional cresceu 8%\n- Pipeline para Q2 está saudável\n\nPor favor revisem e me mandem feedback até quinta.\n\nAbraços,\nJoão',
-    date: '20/03/2026 09:45', unread: true, folder: 'Trabalho', tag: 'tag-work',
+    bodyText: 'Olá time,\n\nSegue em anexo o relatório do primeiro trimestre de 2026 para revisão. Precisamos finalizar até sexta-feira.\n\nPontos de atenção:\n- Faturamento abaixo do previsto em 12%\n- Custo operacional cresceu 8%\n- Pipeline para Q2 está saudável\n\nPor favor revisem e me mandem feedback até quinta.\n\nAbraços,\nJoão',
+    bodyHtml: null,
+    date: '2026-03-20T09:45:00Z', dateFormatted: '20/03/2026 09:45',
+    unread: true, folder: 'Trabalho', tag: 'tag-work',
+    hasAttachments: true, importance: 'high', to: ['time@empresa.com'], cc: [],
   },
   {
     id: '2', from: 'noreply@banco.com.br', fromName: 'Banco Digital',
     subject: 'Fatura do seu cartão - Vencimento 25/03',
     preview: 'Sua fatura no valor de R$ 1.847,50 vence em 5 dias...',
-    body: 'Prezado cliente,\n\nSua fatura do cartão de crédito está disponível:\n\nValor total: R$ 1.847,50\nVencimento: 25/03/2026\nPagamento mínimo: R$ 92,38\n\nPague via PIX, boleto ou débito automático.\n\nAtenciosamente,\nBanco Digital',
-    date: '20/03/2026 08:30', unread: true, folder: 'Financeiro', tag: 'tag-finance',
+    bodyText: 'Prezado cliente,\n\nSua fatura do cartão de crédito está disponível:\n\nValor total: R$ 1.847,50\nVencimento: 25/03/2026\nPagamento mínimo: R$ 92,38\n\nPague via PIX, boleto ou débito automático.\n\nAtenciosamente,\nBanco Digital',
+    bodyHtml: null,
+    date: '2026-03-20T08:30:00Z', dateFormatted: '20/03/2026 08:30',
+    unread: true, folder: 'Financeiro', tag: 'tag-finance',
+    hasAttachments: false, importance: 'normal', to: ['cliente@email.com'], cc: [],
   },
   {
     id: '3', from: 'newsletter@techcrunch.com', fromName: 'TechCrunch',
     subject: '🚀 As 10 maiores tendências de IA para 2026',
     preview: 'Esta semana no TechCrunch: OpenAI, Google e as apostas...',
-    body: 'Esta semana no TechCrunch:\n\n1. OpenAI anuncia novo modelo multimodal\n2. Google investiu US$ 50bi em computação quântica\n3. Startups de IA levantaram recorde de US$ 120bi em Q1\n4. Meta lança assistente open-source para empresas\n5. Anthropic expande presença na Europa\n\nLeia mais em techcrunch.com',
-    date: '19/03/2026 18:00', unread: false, folder: 'Marketing', tag: 'tag-marketing',
+    bodyText: 'Esta semana no TechCrunch:\n\n1. OpenAI anuncia novo modelo multimodal\n2. Google investiu US$ 50bi em computação quântica\n3. Startups de IA levantaram recorde de US$ 120bi em Q1\n4. Meta lança assistente open-source para empresas\n5. Anthropic expande presença na Europa\n\nLeia mais em techcrunch.com',
+    bodyHtml: null,
+    date: '2026-03-19T18:00:00Z', dateFormatted: '19/03/2026 18:00',
+    unread: false, folder: 'Marketing', tag: 'tag-marketing',
+    hasAttachments: false, importance: 'normal', to: ['subscriber@email.com'], cc: [],
   },
   {
     id: '4', from: 'maria.santos@gmail.com', fromName: 'Maria Santos',
     subject: 'Almoço de aniversário - confirmação',
     preview: 'Oi! Confirmando para sábado às 13h no restaurante...',
-    body: 'Oi querido!\n\nConfirmando o almoço de aniversário para sábado, dia 22/03, às 13h no Restaurante Japonês.\n\nVão estar presentes: família e amigos próximos, umas 15 pessoas.\n\nNão precisa trazer nada, apenas você! 🎂\n\nBejo,\nMaria',
-    date: '19/03/2026 14:20', unread: true, folder: 'Pessoal', tag: 'tag-personal',
+    bodyText: 'Oi querido!\n\nConfirmando o almoço de aniversário para sábado, dia 22/03, às 13h no Restaurante Japonês.\n\nVão estar presentes: família e amigos próximos, umas 15 pessoas.\n\nNão precisa trazer nada, apenas você! 🎂\n\nBejo,\nMaria',
+    bodyHtml: null,
+    date: '2026-03-19T14:20:00Z', dateFormatted: '19/03/2026 14:20',
+    unread: true, folder: 'Pessoal', tag: 'tag-personal',
+    hasAttachments: false, importance: 'normal', to: ['voce@email.com'], cc: [],
   },
   {
     id: '5', from: 'juridico@parceiro.com.br', fromName: 'Escritório Jurídico',
     subject: 'Contrato de prestação de serviços - minuta final',
     preview: 'Conforme alinhado na reunião, segue a minuta final do...',
-    body: 'Prezados,\n\nConforme alinhado em reunião do dia 15/03, segue a minuta final do contrato de prestação de serviços para análise e assinatura.\n\nPrazo para retorno: 23/03/2026\n\nQualquer dúvida, estou à disposição.\n\nAtenciosamente,\nDr. Carlos Mendes\nAdvogado OAB/SP 123.456',
-    date: '19/03/2026 11:00', unread: false, folder: 'Trabalho', tag: 'tag-work',
+    bodyText: 'Prezados,\n\nConforme alinhado em reunião do dia 15/03, segue a minuta final do contrato de prestação de serviços para análise e assinatura.\n\nPrazo para retorno: 23/03/2026\n\nQualquer dúvida, estou à disposição.\n\nAtenciosamente,\nDr. Carlos Mendes\nAdvogado OAB/SP 123.456',
+    bodyHtml: null,
+    date: '2026-03-19T11:00:00Z', dateFormatted: '19/03/2026 11:00',
+    unread: false, folder: 'Trabalho', tag: 'tag-work',
+    hasAttachments: true, importance: 'high', to: ['empresa@email.com'], cc: [],
   },
   {
     id: '6', from: 'promo@amazon.com.br', fromName: 'Amazon',
     subject: 'Suas ofertas de hoje - até 70% OFF em eletrônicos',
     preview: 'Aproveite as melhores ofertas em smartphones, notebooks...',
-    body: 'Ofertas especiais para você:\n\n📱 iPhone 16 Pro - R$ 7.499 (era R$ 9.999)\n💻 MacBook Air M3 - R$ 9.999 (era R$ 12.999)\n🎧 AirPods Pro - R$ 1.299 (era R$ 1.999)\n\nOfertas válidas por 24h. Frete grátis acima de R$ 299.\n\nVer mais ofertas em amazon.com.br',
-    date: '18/03/2026 10:00', unread: false, folder: 'Marketing', tag: 'tag-marketing',
+    bodyText: 'Ofertas especiais para você:\n\n📱 iPhone 16 Pro - R$ 7.499 (era R$ 9.999)\n💻 MacBook Air M3 - R$ 9.999 (era R$ 12.999)\n🎧 AirPods Pro - R$ 1.299 (era R$ 1.999)\n\nOfertas válidas por 24h. Frete grátis acima de R$ 299.',
+    bodyHtml: null,
+    date: '2026-03-18T10:00:00Z', dateFormatted: '18/03/2026 10:00',
+    unread: false, folder: 'Marketing', tag: 'tag-marketing',
+    hasAttachments: false, importance: 'normal', to: ['cliente@email.com'], cc: [],
   },
   {
     id: '7', from: 'rh@empresa.com', fromName: 'RH - Empresa',
     subject: 'Holerite Março 2026 disponível',
     preview: 'Seu holerite de março está disponível no portal...',
-    body: 'Prezado colaborador,\n\nSeu holerite referente ao mês de Março/2026 está disponível no portal do colaborador.\n\nAcesse: portal.empresa.com/holerite\n\nData de pagamento: 05/04/2026\n\nEm caso de dúvidas, entre em contato com o RH.\n\nAtenciosamente,\nDepartamento de RH',
-    date: '18/03/2026 09:00', unread: true, folder: 'Trabalho', tag: 'tag-work',
+    bodyText: 'Prezado colaborador,\n\nSeu holerite referente ao mês de Março/2026 está disponível no portal do colaborador.\n\nAcesse: portal.empresa.com/holerite\n\nData de pagamento: 05/04/2026\n\nEm caso de dúvidas, entre em contato com o RH.\n\nAtenciosamente,\nDepartamento de RH',
+    bodyHtml: null,
+    date: '2026-03-18T09:00:00Z', dateFormatted: '18/03/2026 09:00',
+    unread: true, folder: 'Trabalho', tag: 'tag-work',
+    hasAttachments: false, importance: 'normal', to: ['colaborador@empresa.com'], cc: [],
   },
 ];
 
@@ -179,7 +200,7 @@ async function fetchEmails() {
   try {
     const res = await fetch(
       'https://graph.microsoft.com/v1.0/me/messages' +
-      '?$top=50&$select=id,subject,from,bodyPreview,body,receivedDateTime,isRead' +
+      '?$top=50&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance' +
       '&$orderby=receivedDateTime desc',
       { headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type': 'application/json' } }
     );
@@ -187,16 +208,23 @@ async function fetchEmails() {
     const data = await res.json();
 
     state.emails = data.value.map(m => ({
-      id:       m.id,
-      from:     m.from.emailAddress.address,
-      fromName: m.from.emailAddress.name,
-      subject:  m.subject,
-      preview:  m.bodyPreview,
-      body:     m.body.content.replace(/<[^>]+>/g, ''),
-      date:     new Date(m.receivedDateTime).toLocaleString('pt-BR'),
-      unread:   !m.isRead,
-      folder:   'Outros',
-      tag:      '',
+      id:             m.id,
+      from:           m.from?.emailAddress?.address || '',
+      fromName:       m.from?.emailAddress?.name || '',
+      to:             (m.toRecipients || []).map(r => r.emailAddress?.address).filter(Boolean),
+      cc:             (m.ccRecipients  || []).map(r => r.emailAddress?.address).filter(Boolean),
+      subject:        m.subject || '(sem assunto)',
+      preview:        m.bodyPreview || '',
+      bodyHtml:       m.body?.contentType === 'html' ? m.body.content : null,
+      bodyText:       m.body?.contentType === 'text' ? m.body.content : stripHtml(m.body?.content || ''),
+      date:           m.receivedDateTime,
+      dateFormatted:  formatDate(m.receivedDateTime),
+      unread:         !m.isRead,
+      hasAttachments: m.hasAttachments || false,
+      importance:     m.importance || 'normal',
+      folder:         'Outros',
+      tag:            '',
+      attachments:    null, // carregado sob demanda
     }));
     state.filteredEmails = [...state.emails];
     renderEmailList();
@@ -209,6 +237,20 @@ async function fetchEmails() {
     hideStatus();
     showNotif('error', '❌', 'Erro ao carregar e-mails: ' + e.message);
   }
+}
+
+// Busca anexos de um e-mail (incluindo imagens inline CID)
+async function fetchAttachments(emailId) {
+  if (!state.accessToken) return [];
+  try {
+    const res = await fetch(
+      `https://graph.microsoft.com/v1.0/me/messages/${emailId}/attachments`,
+      { headers: { Authorization: `Bearer ${state.accessToken}` } }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.value || [];
+  } catch { return []; }
 }
 
 // ============================================================
@@ -251,10 +293,11 @@ async function classifyEmail(email) {
     .map(r => `- Pasta "${r.folder}": se o conteúdo contém palavras como "${r.criteria}"`)
     .join('\n');
 
+  const bodyText = email.bodyText || stripHtml(email.bodyHtml || '') || email.preview || '';
   const prompt =
     `Você é um assistente que classifica e-mails em pastas. Analise o e-mail abaixo e responda APENAS com o nome da pasta (sem explicação).\n\n` +
     `Regras de classificação:\n${rulesText}\n- Pasta "Outros": se não se encaixar em nenhuma categoria acima\n\n` +
-    `E-mail:\nRemetente: ${email.from}\nAssunto: ${email.subject}\nCorpo: ${email.body.substring(0, 800)}\n\n` +
+    `E-mail:\nRemetente: ${email.from}\nAssunto: ${email.subject}\nCorpo: ${bodyText.substring(0, 800)}\n\n` +
     `Responda APENAS com o nome da pasta: Financeiro, Trabalho, Marketing, Pessoal ou Outros.`;
 
   try {
@@ -298,9 +341,10 @@ async function summarizeEmail(email) {
   const cfg = loadConfig();
   if (!cfg.claudeApiKey) return 'Configure a chave da API do Claude para usar esta função.';
 
+  const bodyText = email.bodyText || stripHtml(email.bodyHtml || '') || email.preview || '';
   const prompt =
     `Faça um resumo executivo deste e-mail em português, em 2-3 frases. Destaque o ponto principal e qualquer ação necessária.\n\n` +
-    `De: ${email.fromName} <${email.from}>\nAssunto: ${email.subject}\nData: ${email.date}\nCorpo:\n${email.body}`;
+    `De: ${email.fromName} <${email.from}>\nAssunto: ${email.subject}\nData: ${email.dateFormatted || email.date}\nCorpo:\n${bodyText.substring(0, 1500)}`;
 
   try {
     const res = await claudeApi([{ role: 'user', content: prompt }], 200);
@@ -350,7 +394,10 @@ async function sendChat() {
   }
 
   const emailsContext = state.emails
-    .map(e => `[${e.date}] De: ${e.fromName} <${e.from}> | Pasta: ${e.folder}\nAssunto: ${e.subject}\nCorpo: ${e.body.substring(0, 300)}`)
+    .map(e => {
+      const body = e.bodyText || stripHtml(e.bodyHtml || '') || e.preview || '';
+      return `[${e.dateFormatted || e.date}] De: ${e.fromName} <${e.from}> | Pasta: ${e.folder}\nAssunto: ${e.subject}\nCorpo: ${body.substring(0, 300)}`;
+    })
     .join('\n\n---\n\n');
 
   const systemPrompt =
@@ -425,23 +472,38 @@ function renderEmailList() {
     return;
   }
 
-  list.innerHTML = emails.map(e => `
-    <div class="email-item ${e.unread ? 'unread' : ''} ${state.selectedEmail?.id === e.id ? 'selected' : ''}"
+  list.innerHTML = emails.map(e => {
+    const initials = getInitials(e.fromName || e.from);
+    const color    = getAvatarColor(e.from);
+    const relDate  = formatRelativeDate(e.date);
+    const selected = state.selectedEmail?.id === e.id;
+
+    return `
+    <div class="email-item ${e.unread ? 'unread' : ''} ${selected ? 'selected' : ''}"
          onclick="selectEmail('${e.id}')">
-      <div class="email-meta">
-        <div class="email-sender">
+      <div class="email-item-inner">
+        <div class="email-avatar-col">
+          <div class="list-avatar" style="background:${color}">${initials}</div>
           ${e.unread ? '<div class="unread-dot"></div>' : ''}
-          ${escHtml(e.fromName || e.from)}
         </div>
-        <div class="email-date">${e.date.split(' ')[0]}</div>
+        <div class="email-content-col">
+          <div class="email-meta">
+            <div class="email-sender">${escHtml(e.fromName || e.from)}</div>
+            <div class="email-date-row">
+              ${e.importance === 'high' ? '<span class="importance-icon" title="Alta importância">🔴</span>' : ''}
+              ${e.hasAttachments ? '<span class="attach-icon" title="Tem anexos">📎</span>' : ''}
+              <span class="email-date">${relDate}</span>
+            </div>
+          </div>
+          <div class="email-subject">${escHtml(e.subject)}</div>
+          <div class="email-bottom-row">
+            <div class="email-preview">${escHtml(e.preview)}</div>
+            ${e.folder && e.tag ? `<span class="email-tag ${e.tag}">${e.folder}</span>` : ''}
+          </div>
+        </div>
       </div>
-      <div class="email-subject">${escHtml(e.subject)}</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;">
-        <div class="email-preview">${escHtml(e.preview)}</div>
-        ${e.folder ? `<span class="email-tag ${e.tag}" style="margin-left:8px;flex-shrink:0">${e.folder}</span>` : ''}
-      </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 function selectEmail(id) {
@@ -456,10 +518,15 @@ function selectEmail(id) {
 
 async function renderEmailDetail(email) {
   const detail   = document.getElementById('detailTab');
-  const initials = (email.fromName || email.from).split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
-  const colors   = ['#7C6EFA', '#5DCAA5', '#EF9F27', '#F0997B', '#E24B4A'];
-  const color    = colors[email.from.charCodeAt(0) % colors.length];
+  const initials = getInitials(email.fromName || email.from);
+  const color    = getAvatarColor(email.from);
+  const toList   = (email.to || []).join(', ') || '—';
+  const dateStr  = email.date ? new Date(email.date).toLocaleString('pt-BR', {
+    weekday: 'long', day: '2-digit', month: 'long', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  }) : email.dateFormatted || '';
 
+  // Monta header (sem o body ainda)
   detail.innerHTML = `
     <div class="detail-header">
       <div class="detail-subject">${escHtml(email.subject)}</div>
@@ -469,10 +536,15 @@ async function renderEmailDetail(email) {
           <div class="from-name">${escHtml(email.fromName || email.from)}</div>
           <div class="from-email">${escHtml(email.from)}</div>
         </div>
-        <div class="detail-date">${email.date}</div>
+        ${email.importance === 'high' ? '<span style="font-size:11px;background:rgba(226,75,74,0.15);color:var(--danger);padding:3px 8px;border-radius:6px;font-weight:500;">⚡ Alta prioridade</span>' : ''}
+      </div>
+      <div class="detail-recipients">
+        <span class="recipient-label">Para:</span> <span class="recipient-value">${escHtml(toList)}</span>
+        ${email.cc?.length ? `<br/><span class="recipient-label">CC:</span> <span class="recipient-value">${escHtml(email.cc.join(', '))}</span>` : ''}
+        <br/><span class="recipient-label">Data:</span> <span class="recipient-value">${dateStr}</span>
       </div>
       <div class="detail-actions">
-        <button class="action-btn" onclick="summarizeSelected()">🤖 Resumir com IA</button>
+        <button class="action-btn primary" onclick="summarizeSelected()">✨ Resumir com IA</button>
         <button class="action-btn" onclick="replyEmail()">↩️ Responder</button>
         <select class="move-select" onchange="moveSelected(this.value)">
           <option value="">Mover para...</option>
@@ -486,7 +558,124 @@ async function renderEmailDetail(email) {
       <div class="ai-summary-text" id="aiSummaryText">Gerando resumo...</div>
     </div>
     <div class="detail-divider"></div>
-    <div class="detail-body">${escHtml(email.body)}</div>
+    <div id="attachmentsArea"></div>
+    <div id="emailBodyArea" class="email-body-area"><div class="body-loading"><div class="spinner"></div> Carregando...</div></div>
+  `;
+
+  // Carrega corpo + anexos em paralelo
+  renderEmailBody(email);
+  if (email.hasAttachments && state.accessToken) loadAndRenderAttachments(email);
+}
+
+async function renderEmailBody(email) {
+  const area = document.getElementById('emailBodyArea');
+  if (!area) return;
+
+  if (email.bodyHtml) {
+    // Resolve imagens inline CID se tivermos token
+    let html = email.bodyHtml;
+    if (state.accessToken && email.hasAttachments) {
+      html = await resolveCidImages(email.id, html);
+    }
+    // Renderiza em iframe sandboxed para segurança
+    area.innerHTML = '';
+    const iframe = document.createElement('iframe');
+    iframe.className = 'email-iframe';
+    iframe.setAttribute('sandbox', 'allow-same-origin');
+    iframe.setAttribute('scrolling', 'no');
+    area.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open();
+    doc.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+               font-size: 14px; line-height: 1.7; color: #c8c6d8;
+               background: transparent; margin: 0; padding: 0; word-wrap: break-word; }
+        img  { max-width: 100%; height: auto; border-radius: 6px; }
+        a    { color: #7C6EFA; }
+        table{ max-width: 100%; }
+        blockquote { border-left: 3px solid #333; margin: 8px 0; padding: 4px 12px; color: #888; }
+        pre, code { background: #1c1f2a; border-radius: 6px; padding: 2px 6px; font-size: 13px; }
+      </style></head><body>${html}</body></html>`);
+    doc.close();
+
+    // Auto-resize iframe
+    const resize = () => {
+      try {
+        const h = iframe.contentDocument.body.scrollHeight;
+        iframe.style.height = Math.max(h + 32, 200) + 'px';
+      } catch {}
+    };
+    iframe.onload = resize;
+    setTimeout(resize, 300);
+    setTimeout(resize, 800);
+  } else {
+    // Fallback: texto puro formatado
+    area.innerHTML = `<div class="detail-body">${formatText(email.bodyText || email.preview || '')}</div>`;
+  }
+}
+
+async function resolveCidImages(emailId, html) {
+  // Encontra todos os cid: em src
+  const cidPattern = /src=["']cid:([^"']+)["']/gi;
+  const cids = [...html.matchAll(cidPattern)].map(m => m[1]);
+  if (!cids.length) return html;
+
+  try {
+    const attachments = await fetchAttachments(emailId);
+    for (const att of attachments) {
+      if (att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentId) {
+        const cidClean = att.contentId.replace(/[<>]/g, '');
+        const dataUrl  = `data:${att.contentType};base64,${att.contentBytes}`;
+        html = html.replace(new RegExp(`cid:${cidClean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'gi'), dataUrl);
+      }
+    }
+  } catch {}
+  return html;
+}
+
+async function loadAndRenderAttachments(email) {
+  const area = document.getElementById('attachmentsArea');
+  if (!area) return;
+
+  const attachments = await fetchAttachments(email.id);
+  if (!attachments.length) return;
+
+  // Filtra só os reais (não inline CID)
+  const realAttachments = attachments.filter(a =>
+    a['@odata.type'] === '#microsoft.graph.fileAttachment' &&
+    !a.isInline
+  );
+  if (!realAttachments.length) return;
+
+  const items = realAttachments.map(a => {
+    const sizeKb = a.size ? Math.round(a.size / 1024) : 0;
+    const icon   = getAttachIcon(a.name);
+    const dataUrl = a.contentBytes ? `data:${a.contentType};base64,${a.contentBytes}` : null;
+    const isImg   = a.contentType?.startsWith('image/');
+
+    return `
+      <div class="attachment-item">
+        <div class="attach-preview">
+          ${isImg && dataUrl
+            ? `<img src="${dataUrl}" class="attach-thumb" alt="${escHtml(a.name)}"/>`
+            : `<span class="attach-file-icon">${icon}</span>`}
+        </div>
+        <div class="attach-info">
+          <div class="attach-name">${escHtml(a.name)}</div>
+          <div class="attach-size">${sizeKb > 0 ? sizeKb + ' KB' : ''}</div>
+        </div>
+        ${dataUrl ? `<a class="attach-download" href="${dataUrl}" download="${escHtml(a.name)}" title="Baixar">⬇</a>` : ''}
+      </div>`;
+  }).join('');
+
+  area.innerHTML = `
+    <div class="attachments-bar">
+      <div class="attachments-label">📎 ${realAttachments.length} anexo${realAttachments.length > 1 ? 's' : ''}</div>
+      <div class="attachments-list">${items}</div>
+    </div>
+    <div class="detail-divider"></div>
   `;
 }
 
@@ -735,6 +924,72 @@ function formatText(str) {
     .replace(/\n/g, '<br/>')
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.*?)\*/g, '<em>$1</em>');
+}
+
+function stripHtml(html) {
+  if (!html) return '';
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function getInitials(name) {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  return parts.length >= 2
+    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    : name.substring(0, 2).toUpperCase();
+}
+
+function getAvatarColor(email) {
+  const colors = ['#7C6EFA','#5DCAA5','#EF9F27','#F0997B','#E24B4A','#4AACE2','#B26EFA'];
+  let hash = 0;
+  for (let i = 0; i < (email || '').length; i++) hash = (hash * 31 + email.charCodeAt(i)) & 0xffffffff;
+  return colors[Math.abs(hash) % colors.length];
+}
+
+function formatDate(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleString('pt-BR', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+}
+
+function formatRelativeDate(iso) {
+  if (!iso) return '';
+  const now   = new Date();
+  const date  = new Date(iso);
+  const diffMs = now - date;
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffH   = Math.floor(diffMs / 3600000);
+  const diffD   = Math.floor(diffMs / 86400000);
+
+  if (diffMin < 1)  return 'agora';
+  if (diffMin < 60) return `${diffMin}min`;
+  if (diffH   < 24) return `${diffH}h`;
+  if (diffD   === 1) return 'ontem';
+  if (diffD   < 7)  return `${diffD}d`;
+
+  // Mesma ano: dia/mês; caso contrário: dd/mm/aa
+  const sameYear = date.getFullYear() === now.getFullYear();
+  return date.toLocaleDateString('pt-BR', sameYear
+    ? { day: '2-digit', month: '2-digit' }
+    : { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+function getAttachIcon(filename) {
+  const ext = (filename || '').split('.').pop().toLowerCase();
+  const map  = {
+    pdf: '📄', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊',
+    ppt: '📊', pptx: '📊', zip: '🗜️', rar: '🗜️',
+    jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', webp: '🖼️',
+    mp4: '🎬', mp3: '🎵', txt: '📃',
+  };
+  return map[ext] || '📎';
 }
 
 // ============================================================
