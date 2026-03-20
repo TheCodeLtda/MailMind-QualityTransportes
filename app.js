@@ -458,17 +458,20 @@ async function renderEmailBody(email) {
     area.innerHTML=`<div class="detail-body">${escHtml(email.bodyText||email.preview||'').replace(/\n/g,'<br>')}</div>`;
   }
 }
-async function resolveCidImages(emailId,html) {
-  if(!/src=["']cid:/i.test(html)) return html;
+async function resolveCidImages(emailId, html) {
+  if (!/src=["']cid:/i.test(html)) return html;
   try {
-    const attachments=await fetchAttachments(emailId);
-    for(const att of attachments) {
-      if(att['@odata.type']==='#microsoft.graph.fileAttachment'&&att.contentId){
-        const cid=att.contentId.replace(/[<>]/g,'');
-        html=html.replace(new RegExp(`cid:${cid.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}','gi'),`data:${att.contentType};base64,${att.contentBytes}`);
+    const attachments = await fetchAttachments(emailId);
+    for (const att of attachments) {
+      if (att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentId) {
+        const cid      = att.contentId.replace(/[<>]/g, '');
+        const escaped  = cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re       = new RegExp('cid:' + escaped, 'gi');
+        const dataUrl  = 'data:' + att.contentType + ';base64,' + att.contentBytes;
+        html = html.replace(re, dataUrl);
       }
     }
-  } catch {}
+  } catch (e) { console.warn('resolveCidImages:', e); }
   return html;
 }
 async function loadAndRenderAttachments(email) {
