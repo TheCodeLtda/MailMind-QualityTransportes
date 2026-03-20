@@ -994,15 +994,34 @@ function switchView(view, btn) {
 
 // Preenche o painel de configurações com os valores salvos
 function populateConfigPanel() {
-  const cfg = loadConfig();
+  // Lê direto do localStorage para garantir dado fresco
+  let cfg = {};
+  try { cfg = JSON.parse(localStorage.getItem('mailmind_config') || '{}'); } catch {}
 
-  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
-  set('configApiKey',    cfg.claudeApiKey);
-  set('configClientId',  cfg.clientId);
-  set('configTenantId',  cfg.tenantId);
-  set('configRedirectUri', cfg.redirectUri || window.location.origin);
-  set('configModel',     cfg.model || 'claude-sonnet-4-20250514');
-  set('configBatchSize', cfg.batchSize || 20);
+  // Fallback para state.config se localStorage estiver vazio
+  if (!cfg.claudeApiKey && state.config?.claudeApiKey) cfg = state.config;
+
+  console.log('[MailMind] populateConfigPanel — cfg:', JSON.stringify({
+    claudeApiKey: cfg.claudeApiKey ? 'sk-ant-...(ok)' : 'VAZIO',
+    clientId:  cfg.clientId  || 'VAZIO',
+    tenantId:  cfg.tenantId  || 'VAZIO',
+    model:     cfg.model     || 'VAZIO',
+  }));
+
+  const fields = {
+    configApiKey:    cfg.claudeApiKey || '',
+    configClientId:  cfg.clientId     || '',
+    configTenantId:  cfg.tenantId     || '',
+    configRedirectUri: cfg.redirectUri || window.location.origin,
+    configModel:     cfg.model        || 'claude-sonnet-4-20250514',
+    configBatchSize: cfg.batchSize    || 20,
+  };
+
+  Object.entries(fields).forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (el) { el.value = val; }
+    else    { console.warn('[MailMind] Campo não encontrado:', id); }
+  });
 
   const autoClassify = document.getElementById('autoClassify');
   if (autoClassify) autoClassify.checked = cfg.autoClassify !== false;
