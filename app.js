@@ -377,9 +377,13 @@ function openComposer(mode) {
   const toVal      = mode==='forward' ? '' : email.from;
   const subjectVal = (mode==='forward'?'Enc: ':'Re: ') + email.subject;
 
-  // Citação separada — não mistura com o texto que o usuário vai digitar
-  const quotedText = email.bodyText || stripHtml(email.bodyHtml||'') || '';
-  const quoteBlock = `\n\n--- Mensagem original ---\nDe: ${email.fromName} <${email.from}>\nData: ${email.dateFormatted||''}\nAssunto: ${email.subject}\n\n${quotedText.substring(0,2000)}`;
+  // Texto limpo da citação — remove HTML, &nbsp; e espaços excessivos
+  const cleanText = (email.bodyText || stripHtml(email.bodyHtml||'') || '')
+    .replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&').replace(/&lt;/gi,'<')
+    .replace(/&gt;/gi,'>').replace(/&quot;/gi,'"').replace(/&#\d+;/gi,' ')
+    .replace(/ {3,}/g,' ').replace(/\t/g,' ').replace(/\n{4,}/g,'\n\n').trim()
+    .substring(0, 1500);
+  const quoteBlock = `\n\n--- Mensagem original ---\nDe: ${email.fromName} <${email.from}>\nData: ${email.dateFormatted||''}\nAssunto: ${email.subject}\n\n${cleanText}`;
 
   const panel = document.createElement('div');
   panel.id='composerPanel'; panel.className='composer-panel';
@@ -943,7 +947,11 @@ function applyFilters(){
   state.filteredEmails=emails;renderEmailList();
 }
 function updateFolderCounts(){['Trabalho','Financeiro','Marketing','Pessoal','Outros'].forEach(f=>{const el=document.getElementById('cnt-'+f);if(el)el.textContent=state.emails.filter(e=>e.folder===f).length;});}
-function updateUnreadBadge(){document.getElementById('unreadBadge').textContent=state.emails.filter(e=>e.unread).length;}
+function updateUnreadBadge(){
+  const count = state.emails.filter(e=>e.unread).length;
+  document.getElementById('unreadBadge').textContent = count;
+  updateTabBadge();
+}
 
 // ============================================================
 // VIEW / TAB SWITCHING
@@ -1068,6 +1076,68 @@ function initResize() {
     origSwitchView(view, btn);
     setTimeout(positionHandles, 10);
   };
+}
+
+// ============================================================
+// BADGE NA ABA — título e favicon com contador de não lidos
+// ============================================================
+let _faviconCanvas = null;
+
+function updateTabBadge() {
+  const unread = state.emails.filter(e => e.unread).length;
+
+  // Atualiza título
+  const base = 'MailMind — Quality Transportes';
+  document.title = unread > 0 ? `(${unread}) ${base}` : base;
+
+  // Atualiza favicon com badge numérico
+  renderFaviconBadge(unread);
+}
+
+function renderFaviconBadge(count) {
+  if (!_faviconCanvas) {
+    _faviconCanvas = document.createElement('canvas');
+    _faviconCanvas.width  = 32;
+    _faviconCanvas.height = 32;
+  }
+  const canvas = _faviconCanvas;
+  const ctx    = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 32, 32);
+
+  // Ícone base — círculo roxo com ✦
+  ctx.fillStyle = '#7C6EFA';
+  ctx.beginPath();
+  ctx.roundRect(2, 2, 28, 28, 6);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('M', 16, 16);
+
+  // Badge vermelho com número
+  if (count > 0) {
+    const label = count > 99 ? '99+' : String(count);
+    const bx = 32, by = 0, br = 10;
+    ctx.fillStyle = '#E24B4A';
+    ctx.beginPath();
+    ctx.arc(bx - br, by + br, br, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, bx - br, by + br);
+  }
+
+  // Atualiza o <link rel="icon">
+  let link = document.querySelector("link[rel~='icon']");
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    document.head.appendChild(link);
+  }
+  link.href = canvas.toDataURL('image/png');
 }
 
 // ============================================================
