@@ -449,7 +449,9 @@ function renderEmailList() {
   if(!emails.length){list.innerHTML='<div style="padding:40px 20px;text-align:center;color:var(--text3);font-size:13px;">Nenhum e-mail encontrado</div>';return;}
   list.innerHTML=emails.map(e=>{
     const initials=getInitials(e.fromName||e.from), color=getAvatarColor(e.from), relDate=formatRelativeDate(e.date), selected=state.selectedEmail?.id===e.id;
-    return `<div class="email-item ${e.unread?'unread':''} ${selected?'selected':''}" onclick="selectEmail('${e.id}')">
+    return `<div class="email-item ${e.unread?'unread':''} ${selected?'selected':''}"
+      onclick="selectEmail('${e.id}')"
+      ondblclick="openEmailModal('${e.id}')">
       <div class="email-item-inner">
         <div class="email-avatar-col">
           <div class="list-avatar" style="background:${color}">${initials}</div>
@@ -761,6 +763,173 @@ function switchTab(tab,btn){
   if(btn)btn.classList.add('active');
   document.getElementById('detailTab').classList.toggle('active',tab==='detail');
   document.getElementById('chatTab').classList.toggle('active',tab==='chat');
+}
+
+// ============================================================
+// EMAIL MODAL — janela fullscreen ao dar duplo clique
+// ============================================================
+async function openEmailModal(id) {
+  const email = state.emails.find(e => e.id === id);
+  if (!email) return;
+
+  // Marca como lido
+  if (email.unread) {
+    email.unread = false;
+    if (state.connected && state.accessToken) markAsRead(email.id);
+    renderEmailList();
+    updateUnreadBadge();
+  }
+
+  const modal   = document.getElementById('emailModal');
+  const initials = getInitials(email.fromName || email.from);
+  const color    = getAvatarColor(email.from);
+  const toList   = (email.to || []).join(', ') || '—';
+  const dateStr  = email.date ? new Date(email.date).toLocaleString('pt-BR', {
+    weekday:'long', day:'2-digit', month:'long', year:'numeric', hour:'2-digit', minute:'2-digit'
+  }) : email.dateFormatted || '';
+
+  document.getElementById('emailModalTitle').textContent = email.subject;
+  document.getElementById('emailModalSummaryBox').style.display = 'none';
+
+  document.getElementById('emailModalMeta').innerHTML = `
+    <div class="detail-from" style="padding:0">
+      <div class="avatar" style="background:${color}">${initials}</div>
+      <div class="from-info">
+        <div class="from-name">${escHtml(email.fromName || email.from)}</div>
+        <div class="from-email">${escHtml(email.from)}</div>
+      </div>
+      ${email.importance==='high' ? '<span style="font-size:11px;background:rgba(226,75,74,0.15);color:var(--danger);padding:3px 8px;border-radius:6px;font-weight:500;">Alta prioridade</span>' : ''}
+    </div>
+    <div class="detail-recipients" style="margin-top:10px">
+      <span class="recipient-label">Para:</span> <span class="recipient-value">${escHtml(toList)}</span>
+      ${email.cc?.length ? `<br/><span class="recipient-label">CC:</span> <span class="recipient-value">${escHtml(email.cc.join(', '))}</span>` : ''}
+      <br/><span class="recipient-label">Data:</span> <span class="recipient-value">${dateStr}</span>
+    </div>`;
+
+  // Corpo do e-mail
+  const bodyArea = document.getElementById('emailModalBody');
+  bodyArea.innerHTML = '<div class="body-loading"><div class="spinner"></div> Carregando...</div>';
+
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+
+  // Renderiza corpo
+  await renderEmailBodyInto(email, bodyArea);
+
+  // Anexos
+  if (email.hasAttachments && state.accessToken) {
+    const attArea = document.createElement('div');
+    attArea.id = 'emailModalAttachments';
+    bodyArea.appendChild(attArea);
+    loadAndRenderAttachmentsInto(email, attArea);
+  }
+}
+
+function closeEmailModal() {
+  document.getElementById('emailModal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+// Fecha com ESC
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeEmailModal();
+});
+
+async function summarizeInModal() {
+  const email = state.selectedEmail || state.emails[0];
+  if (!email) return;
+  const box  = document.getElementById('emailModalSummaryBox');
+  const text = document.getElementById('emailModalSummaryText');
+  box.style.display = 'block';
+  text.textContent = 'Gerando resumo...';
+  const cfg = loadConfig();
+  if (!cfg.claudeApiKey) { text.textContent = 'Configure a chave da API do Claude.'; return; }
+  const bodyText = email.bodyText || stripHtml(email.bodyHtml || '') || email.preview || '';
+  const prompt = `Faça um resumo executivo em português, 2-3 frases. Destaque o ponto principal e ação necessária.\n\nDe: ${email.fromName} <${email.from}>\nAssunto: ${email.subject}\nCorpo:\n${bodyText.substring(0, 1500)}`;
+  try {
+    const res = await claudeApi([{ role:'user', content:prompt }], 200);
+    text.textContent = res.content?.[0]?.text || 'Não foi possível gerar o resumo.';
+  } catch(e) { text.textContent = 'Erro: ' + e.message; }
+}
+
+function moveSelectedFromModal(folder) {
+  if (!folder) return;
+  // Encontra o e-mail cujo modal está aberto pelo título
+  const title = document.getElementById('emailModalTitle').textContent;
+  const email = state.emails.find(e => e.subject === title);
+  if (!email) return;
+  const tagMap = { Financeiro:'tag-finance', Trabalho:'tag-work', Marketing:'tag-marketing', Pessoal:'tag-personal', Outros:'' };
+  email.folder = folder;
+  email.tag    = tagMap[folder] || '';
+  if (state.connected && state.accessToken) moveEmail(email.id, folder);
+  renderEmailList();
+  updateFolderCounts();
+  showNotif('success', '✅', `E-mail movido para ${folder}`);
+}
+
+// Versão do renderEmailBody que renderiza em qualquer container
+async function renderEmailBodyInto(email, area) {
+  let html = email.bodyHtml || '';
+  if (html) {
+    if (state.accessToken && email.hasAttachments) html = await resolveCidImages(email.id, html);
+    html = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '')
+      .replace(/javascript:/gi, '');
+
+    area.innerHTML = '';
+    const iframe = document.createElement('iframe');
+    iframe.className = 'email-iframe email-iframe-modal';
+    iframe.setAttribute('sandbox', 'allow-same-origin allow-popups');
+    iframe.setAttribute('scrolling', 'no');
+    area.appendChild(iframe);
+
+    const doc = iframe.contentDocument || iframe.contentWindow.document;
+    doc.open();
+    doc.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+      <style>
+        html,body{margin:0;padding:12px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.7;}
+        img{max-width:100%!important;height:auto!important;}
+        table{max-width:100%!important;}a{word-break:break-all;}
+        *{box-sizing:border-box;}
+      </style>
+    </head><body>${html}</body></html>`);
+    doc.close();
+
+    const resize = () => {
+      try {
+        const h = doc.body.scrollHeight;
+        if (h > 0) iframe.style.height = (h + 32) + 'px';
+      } catch {}
+    };
+    iframe.onload = resize;
+    setTimeout(resize, 200);
+    setTimeout(resize, 800);
+  } else {
+    area.innerHTML = `<div class="detail-body" style="padding:24px 32px;font-size:15px">${escHtml(email.bodyText || email.preview || '').replace(/\n/g, '<br>')}</div>`;
+  }
+}
+
+async function loadAndRenderAttachmentsInto(email, area) {
+  const attachments = await fetchAttachments(email.id);
+  const real = attachments.filter(a => a['@odata.type'] === '#microsoft.graph.fileAttachment' && !a.isInline);
+  if (!real.length) return;
+  const items = real.map(a => {
+    const sizeKb  = a.size ? Math.round(a.size / 1024) : 0;
+    const icon    = getAttachIcon(a.name);
+    const dataUrl = a.contentBytes ? `data:${a.contentType};base64,${a.contentBytes}` : null;
+    const isImg   = a.contentType?.startsWith('image/');
+    return `<div class="attachment-item">
+      <div class="attach-preview">${isImg && dataUrl ? `<img src="${dataUrl}" class="attach-thumb" alt="${escHtml(a.name)}">` : `<span class="attach-file-icon">${icon}</span>`}</div>
+      <div class="attach-info"><div class="attach-name">${escHtml(a.name)}</div><div class="attach-size">${sizeKb > 0 ? sizeKb + ' KB' : ''}</div></div>
+      ${dataUrl ? `<a class="attach-download" href="${dataUrl}" download="${escHtml(a.name)}" title="Baixar">⬇</a>` : ''}
+    </div>`;
+  }).join('');
+  area.innerHTML = `<div class="detail-divider" style="margin:0 32px"></div>
+    <div class="attachments-bar" style="margin:0 32px 24px">
+      <div class="attachments-label">Anexos (${real.length})</div>
+      <div class="attachments-list">${items}</div>
+    </div>`;
 }
 
 // ============================================================
