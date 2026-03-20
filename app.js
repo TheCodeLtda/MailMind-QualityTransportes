@@ -983,12 +983,29 @@ function switchView(view, btn) {
     contentArea.style.display = 'none';
     rulesPanel.style.display  = 'none';
     configPanel.style.display = 'block';
+    populateConfigPanel(); // ← preenche sempre que a aba abre
   } else {
     emailPanel.style.display  = 'flex';
     contentArea.style.display = 'flex';
     rulesPanel.style.display  = 'none';
     configPanel.style.display = 'none';
   }
+}
+
+// Preenche o painel de configurações com os valores salvos
+function populateConfigPanel() {
+  const cfg = loadConfig();
+
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+  set('configApiKey',    cfg.claudeApiKey);
+  set('configClientId',  cfg.clientId);
+  set('configTenantId',  cfg.tenantId);
+  set('configRedirectUri', cfg.redirectUri || window.location.origin);
+  set('configModel',     cfg.model || 'claude-sonnet-4-20250514');
+  set('configBatchSize', cfg.batchSize || 20);
+
+  const autoClassify = document.getElementById('autoClassify');
+  if (autoClassify) autoClassify.checked = cfg.autoClassify !== false;
 }
 
 function switchTab(tab, btn) {
