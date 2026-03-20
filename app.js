@@ -579,78 +579,82 @@ async function renderEmailBody(email) {
   const area = document.getElementById('emailBodyArea');
   if (!area) return;
 
-  if (email.bodyHtml) {
-    let html = email.bodyHtml;
+  let html = email.bodyHtml || '';
 
+  if (html) {
     // Resolve imagens inline CID → base64
     if (state.accessToken && email.hasAttachments) {
       html = await resolveCidImages(email.id, html);
     }
 
-    // Wrap com estilos inline (sem depender de herança do parent)
-    const fullHtml = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-  html, body {
-    margin: 0; padding: 8px 0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-    font-size: 14px; line-height: 1.7;
-    color: #c8c6d8; background: transparent;
-    word-wrap: break-word; overflow-wrap: break-word;
-  }
-  img { max-width: 100% !important; height: auto !important; border-radius: 4px; display: block; }
-  a   { color: #7C6EFA; }
-  table { max-width: 100% !important; border-collapse: collapse; }
-  td, th { padding: 4px 8px; }
-  blockquote {
-    border-left: 3px solid rgba(255,255,255,0.15);
-    margin: 8px 0; padding: 4px 12px; color: #888;
-  }
-  pre, code {
-    background: rgba(255,255,255,0.05); border-radius: 4px;
-    padding: 2px 6px; font-size: 13px;
-  }
-  /* Fix imagens de fundo branco em e-mails com fundo forçado */
-  [bgcolor], [background] { background: transparent !important; }
-  /* Collapse espaços excessivos de &nbsp; */
-  body * { max-width: 100% !important; }
-</style>
-</head>
-<body>${html}</body>
-</html>`;
+    // Sanitiza: remove scripts e on* mas preserva imagens e layout
+    html = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, (match) => {
+        // Preserva estilos mas remove referências a fontes externas problemáticas
+        return match.replace(/@import[^;]+;/gi, '');
+      })
+      .replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '')  // remove event handlers
+      .replace(/javascript:/gi, '');                    // remove js: em hrefs
 
+    // Usa Shadow DOM para isolamento real — funciona em qualquer host
     area.innerHTML = '';
-    const iframe = document.createElement('iframe');
-    iframe.className = 'email-iframe';
-    // srcdoc é a forma mais confiável — não depende de blob URL nem doc.write
-    iframe.srcdoc = fullHtml;
-    // Permite imagens externas (https) mas bloqueia scripts e forms
-    iframe.setAttribute('sandbox', 'allow-same-origin allow-popups');
-    iframe.setAttribute('scrolling', 'no');
-    iframe.setAttribute('referrerpolicy', 'no-referrer');
-    area.appendChild(iframe);
+    const host = document.createElement('div');
+    host.className = 'email-shadow-host';
+    area.appendChild(host);
 
-    // Auto-resize robusto: tenta várias vezes até o conteúdo renderizar
-    const tryResize = (attempts = 0) => {
-      try {
-        const body = iframe.contentDocument?.body;
-        if (!body) { if (attempts < 20) setTimeout(() => tryResize(attempts + 1), 150); return; }
-        const h = body.scrollHeight || body.offsetHeight;
-        if (h < 10 && attempts < 20) { setTimeout(() => tryResize(attempts + 1), 150); return; }
-        iframe.style.height = Math.max(h + 24, 120) + 'px';
-        // Re-check depois das imagens carregarem
-        if (attempts < 8) setTimeout(() => tryResize(attempts + 1), 500);
-      } catch { if (attempts < 20) setTimeout(() => tryResize(attempts + 1), 150); }
-    };
-    iframe.onload = () => tryResize();
-    setTimeout(() => tryResize(), 100);
+    const shadow = host.attachShadow({ mode: 'open' });
+    shadow.innerHTML = `
+      <style>
+        :host {
+          display: block;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+          font-size: 14px;
+          line-height: 1.7;
+          color: #e8e6f0;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
+        }
+        * { max-width: 100% !important; box-sizing: border-box; }
+        img { height: auto !important; border-radius: 4px; }
+        a { color: #7C6EFA; }
+        table { border-collapse: collapse; width: auto; }
+        td, th { padding: 4px 8px; vertical-align: top; }
+        blockquote {
+          border-left: 3px solid rgba(255,255,255,0.15);
+          margin: 8px 0; padding: 4px 12px; color: #888;
+        }
+        pre, code {
+          background: rgba(255,255,255,0.07); border-radius: 4px;
+          padding: 2px 6px; font-size: 13px; white-space: pre-wrap;
+        }
+        p { margin: 0 0 10px; }
+        h1,h2,h3,h4 { color: #e8e6f0; margin: 12px 0 6px; }
+        /* E-mails com fundo branco forçado — torna transparente */
+        [bgcolor] { background-color: transparent !important; }
+        [style*="background:#fff"], [style*="background: #fff"],
+        [style*="background:white"], [style*="background: white"],
+        [style*="background:#ffffff"], [style*="background: #ffffff"] {
+          background: transparent !important;
+        }
+        /* Força cor de texto para legibilidade no tema escuro */
+        [style*="color:#000"], [style*="color: #000"],
+        [style*="color:black"], [style*="color: black"],
+        [style*="color:#333"], [style*="color: #333"],
+        [style*="color:#1"], [style*="color:#2"], [style*="color:#3"], [style*="color:#4"] {
+          color: #c8c6d8 !important;
+        }
+        /* &nbsp; excessivos — normaliza espaçamento */
+        br + br { display: none; }
+      </style>
+      <div class="email-body-content">${html}</div>
+    `;
 
+  } else if (email.bodyText) {
+    // Texto puro
+    area.innerHTML = `<div class="detail-body">${formatText(email.bodyText)}</div>`;
   } else {
-    // Fallback: texto puro formatado
-    area.innerHTML = `<div class="detail-body">${formatText(email.bodyText || email.preview || '')}</div>`;
+    area.innerHTML = `<div class="detail-body" style="color:var(--text3);font-style:italic">Sem conteúdo</div>`;
   }
 }
 
