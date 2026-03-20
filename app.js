@@ -457,21 +457,44 @@ async function renderEmailBody(email) {
   let html=email.bodyHtml||'';
   if(html) {
     if(state.accessToken&&email.hasAttachments) html=await resolveCidImages(email.id,html);
-    html=html.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/\son\w+\s*=\s*["'][^"']*["']/gi,'').replace(/javascript:/gi,'');
+    // Remove apenas scripts e handlers — preserva estilos e cores originais do e-mail
+    html=html
+      .replace(/<script[\s\S]*?<\/script>/gi,'')
+      .replace(/\son\w+\s*=\s*["'][^"']*["']/gi,'')
+      .replace(/javascript:/gi,'');
+
     area.innerHTML='';
-    const host=document.createElement('div'); host.className='email-shadow-host'; area.appendChild(host);
-    const shadow=host.attachShadow({mode:'open'});
-    shadow.innerHTML=`<style>
-      :host{display:block;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:14px;line-height:1.7;color:#e8e6f0;word-wrap:break-word;overflow-wrap:break-word;}
-      *{max-width:100%!important;box-sizing:border-box;}img{height:auto!important;border-radius:4px;}a{color:#7C6EFA;}
-      table{border-collapse:collapse;width:auto;}td,th{padding:4px 8px;vertical-align:top;}
-      blockquote{border-left:3px solid rgba(255,255,255,0.15);margin:8px 0;padding:4px 12px;color:#888;}
-      pre,code{background:rgba(255,255,255,0.07);border-radius:4px;padding:2px 6px;font-size:13px;white-space:pre-wrap;}
-      p{margin:0 0 10px;}h1,h2,h3,h4{color:#e8e6f0;margin:12px 0 6px;}
-      [bgcolor]{background-color:transparent!important;}
-      [style*="background:#fff"],[style*="background: #fff"],[style*="background:white"],[style*="background:#ffffff"]{background:transparent!important;}
-      [style*="color:#000"],[style*="color: #000"],[style*="color:black"],[style*="color:#333"]{color:#c8c6d8!important;}
-    </style><div>${html}</div>`;
+    const iframe=document.createElement('iframe');
+    iframe.className='email-iframe';
+    iframe.setAttribute('sandbox','allow-same-origin allow-popups');
+    iframe.setAttribute('scrolling','no');
+    area.appendChild(iframe);
+
+    // Injeta o HTML completo do e-mail com estilos originais intactos
+    const doc=iframe.contentDocument||iframe.contentWindow.document;
+    doc.open();
+    doc.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+      <style>
+        html,body{margin:0;padding:8px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:14px;line-height:1.6;}
+        img{max-width:100%!important;height:auto!important;}
+        table{max-width:100%!important;}
+        a{word-break:break-all;}
+        *{box-sizing:border-box;}
+      </style>
+    </head><body>${html}</body></html>`);
+    doc.close();
+
+    // Auto-resize robusto
+    const resize=()=>{
+      try{
+        const h=doc.body.scrollHeight;
+        if(h>0) iframe.style.height=(h+24)+'px';
+      }catch{}
+    };
+    iframe.onload=resize;
+    setTimeout(resize,200);
+    setTimeout(resize,600);
+    setTimeout(resize,1500);
   } else {
     area.innerHTML=`<div class="detail-body">${escHtml(email.bodyText||email.preview||'').replace(/\n/g,'<br>')}</div>`;
   }
