@@ -663,62 +663,6 @@ input:checked + .toggle-slider:before { transform: translateX(16px); }
 .summary-row span:last-child  { color: var(--text); font-weight: 500; font-family: monospace; font-size: 12px; }
 
 /* ============================================================
-   EMAIL MODAL FULLSCREEN
-   ============================================================ */
-.email-modal-overlay {
-  position: fixed; inset: 0; z-index: 400;
-  background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
-  display: flex; align-items: center; justify-content: center;
-  opacity: 0; pointer-events: none; transition: opacity 0.2s;
-}
-.email-modal-overlay.open { opacity: 1; pointer-events: all; }
-
-.email-modal {
-  background: var(--bg); border: 1px solid var(--border2);
-  border-radius: 16px; width: 90vw; max-width: 900px;
-  max-height: 90vh; display: flex; flex-direction: column;
-  transform: scale(0.97); transition: transform 0.2s;
-  overflow: hidden;
-}
-.email-modal-overlay.open .email-modal { transform: scale(1); }
-
-.email-modal-topbar {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 12px; padding: 20px 24px 16px;
-  border-bottom: 1px solid var(--border); flex-shrink: 0;
-}
-.email-modal-title {
-  font-family: var(--font-head); font-size: 17px; font-weight: 600;
-  flex: 1; min-width: 0;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.email-modal-actions {
-  display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;
-}
-.email-modal-close {
-  width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--border2);
-  background: var(--surface2); color: var(--text2); font-size: 16px;
-  cursor: pointer; display: flex; align-items: center; justify-content: center;
-  transition: all 0.15s;
-}
-.email-modal-close:hover { border-color: var(--danger); color: var(--danger); }
-
-.email-modal-meta {
-  padding: 16px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0;
-  background: var(--surface);
-}
-.email-modal-body {
-  flex: 1; overflow-y: auto; padding: 24px 0;
-}
-.email-modal-body::-webkit-scrollbar { width: 4px; }
-.email-modal-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
-
-.email-iframe-modal {
-  width: 100%; border: none; display: block; min-height: 200px;
-  background: #fff; padding: 0 32px; box-sizing: border-box;
-}
-
-/* ============================================================
    PAGINAÇÃO
    ============================================================ */
 .pagination-bar {

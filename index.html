@@ -305,31 +305,6 @@
   </div>
 </div>
 
-<!-- MODAL: EMAIL FULLSCREEN -->
-<div class="email-modal-overlay" id="emailModal">
-  <div class="email-modal">
-    <div class="email-modal-topbar">
-      <div class="email-modal-title" id="emailModalTitle"></div>
-      <div class="email-modal-actions">
-        <button class="action-btn primary" onclick="summarizeInModal()">✨ Resumir com IA</button>
-        <button class="action-btn" onclick="replyEmail()">↩ Responder</button>
-        <select class="move-select" onchange="moveSelectedFromModal(this.value)">
-          <option value="">Mover para...</option>
-          <option>Trabalho</option><option>Financeiro</option>
-          <option>Marketing</option><option>Pessoal</option><option>Outros</option>
-        </select>
-        <button class="email-modal-close" onclick="closeEmailModal()" title="Fechar">✕</button>
-      </div>
-    </div>
-    <div class="email-modal-meta" id="emailModalMeta"></div>
-    <div class="ai-summary-box" id="emailModalSummaryBox" style="display:none;margin:0 32px 0">
-      <div class="ai-summary-label">✨ Resumo IA</div>
-      <div class="ai-summary-text" id="emailModalSummaryText">Gerando resumo...</div>
-    </div>
-    <div class="email-modal-body" id="emailModalBody"></div>
-  </div>
-</div>
-
 <!-- MODAL: ADD RULE -->
 <div class="modal-overlay" id="ruleModal">
   <div class="modal">
