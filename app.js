@@ -271,7 +271,7 @@ async function loadOutlookFolders() {
   if (!state.accessToken) return;
   try {
     const res = await fetch(
-      'https://graph.microsoft.com/v1.0/me/mailFolders?$top=50&$select=id,displayName,unreadItemCount,totalItemCount',
+      'https://graph.microsoft.com/v1.0/me/mailFolders?$top=100&$select=id,displayName,unreadItemCount,totalItemCount&$orderby=displayName',
       { headers: { Authorization: `Bearer ${state.accessToken}` } }
     );
     if (!res.ok) return;
@@ -286,37 +286,30 @@ function renderSidebarFolders() {
   if (!list) return;
 
   if (state.useOutlookFolders && state.outlookFolders.length) {
-    // Pastas reais do Outlook
+    // Pastas reais do Outlook com menu de contexto
     const colors = ['#7C6EFA','#5DCAA5','#EF9F27','#F0997B','#E24B4A','#4AACE2','#B26EFA'];
     list.innerHTML = state.outlookFolders.map((f, i) => `
-      <div class="folder-item" onclick="fetchEmailsByFolder('${f.id}','${escHtml(f.displayName)}')">
+      <div class="folder-item folder-item-outlook" onclick="fetchEmailsByFolder('${f.id}','${escHtml(f.displayName)}')" data-folderid="${f.id}">
         <div class="folder-dot" style="background:${colors[i % colors.length]}"></div>
         <span class="folder-name">${escHtml(f.displayName)}</span>
         <span class="folder-count">${f.unreadItemCount > 0 ? f.unreadItemCount : ''}</span>
-      </div>`).join('');
+        <button class="folder-menu-btn" onclick="event.stopPropagation();openFolderMenu('${f.id}','${escHtml(f.displayName)}',this)" title="Opções">···</button>
+      </div>`).join('') +
+      `<div class="folder-new-btn" onclick="openNewFolderModal()">+ Nova pasta</div>`;
   } else {
     // Pastas fixas do MailMind
-    list.innerHTML = `
-      <div class="folder-item" onclick="filterByFolder('Trabalho')">
-        <div class="folder-dot" style="background:#7C6EFA"></div>
-        Trabalho <span class="folder-count" id="cnt-Trabalho">0</span>
-      </div>
-      <div class="folder-item" onclick="filterByFolder('Financeiro')">
-        <div class="folder-dot" style="background:#5DCAA5"></div>
-        Financeiro <span class="folder-count" id="cnt-Financeiro">0</span>
-      </div>
-      <div class="folder-item" onclick="filterByFolder('Marketing')">
-        <div class="folder-dot" style="background:#EF9F27"></div>
-        Marketing <span class="folder-count" id="cnt-Marketing">0</span>
-      </div>
-      <div class="folder-item" onclick="filterByFolder('Pessoal')">
-        <div class="folder-dot" style="background:#F0997B"></div>
-        Pessoal <span class="folder-count" id="cnt-Pessoal">0</span>
-      </div>
-      <div class="folder-item" onclick="filterByFolder('Outros')">
-        <div class="folder-dot" style="background:#888780"></div>
-        Outros <span class="folder-count" id="cnt-Outros">0</span>
-      </div>`;
+    const fixed = [
+      { name:'Trabalho',   color:'#7C6EFA' },
+      { name:'Financeiro', color:'#5DCAA5' },
+      { name:'Marketing',  color:'#EF9F27' },
+      { name:'Pessoal',    color:'#F0997B' },
+      { name:'Outros',     color:'#888780' },
+    ];
+    list.innerHTML = fixed.map(f => `
+      <div class="folder-item" onclick="filterByFolder('${f.name}')">
+        <div class="folder-dot" style="background:${f.color}"></div>
+        ${escHtml(f.name)} <span class="folder-count" id="cnt-${f.name}">0</span>
+      </div>`).join('');
     updateFolderCounts();
   }
 }
@@ -324,7 +317,16 @@ function renderSidebarFolders() {
 async function fetchEmailsByFolder(folderId, folderName) {
   if (!state.accessToken) return;
   document.getElementById('panelTitle').textContent = folderName;
-  state.page.current = 1; state.page.prevLinks = [];
+  state.currentFolder  = folderName;
+  state.page.current   = 1;
+  state.page.prevLinks = [];
+  state.page.nextLink  = null;
+
+  // Destaca a pasta selecionada
+  document.querySelectorAll('.folder-item-outlook').forEach(el =>
+    el.classList.toggle('active-folder', el.dataset.folderid === folderId)
+  );
+
   showStatus(`Carregando ${folderName}...`);
   try {
     const res = await fetch(
@@ -335,11 +337,130 @@ async function fetchEmailsByFolder(folderId, folderName) {
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    state.emails = data.value.map(buildEmailObj);
+
+    // Marca todos os e-mails com o nome da pasta
+    state.emails = data.value.map(m => ({ ...buildEmailObj(m), folder: folderName, tag: '' }));
     state.filteredEmails = [...state.emails];
-    state.page.nextLink = data['@odata.nextLink'] || null;
-    renderEmailList(); renderPagination(); hideStatus();
+    state.page.nextLink  = data['@odata.nextLink'] || null;
+
+    renderEmailList(); updateUnreadBadge(); renderPagination(); hideStatus();
   } catch(e) { hideStatus(); showNotif('error','❌','Erro: '+e.message); }
+}
+
+// ── CRUD de pastas ────────────────────────────────────────────
+function openFolderMenu(folderId, folderName, btn) {
+  // Remove menu existente
+  document.getElementById('folderCtxMenu')?.remove();
+
+  const menu = document.createElement('div');
+  menu.id = 'folderCtxMenu';
+  menu.className = 'folder-ctx-menu';
+  menu.innerHTML = `
+    <div class="ctx-item" onclick="openRenameFolderModal('${folderId}','${escHtml(folderName)}')">Renomear</div>
+    <div class="ctx-item ctx-danger" onclick="confirmDeleteFolder('${folderId}','${escHtml(folderName)}')">Excluir pasta</div>`;
+
+  const rect = btn.getBoundingClientRect();
+  menu.style.top  = rect.bottom + 4 + 'px';
+  menu.style.left = rect.left   + 'px';
+  document.body.appendChild(menu);
+
+  // Fecha ao clicar fora
+  setTimeout(() => {
+    document.addEventListener('click', () => menu.remove(), { once: true });
+  }, 50);
+}
+
+function openNewFolderModal() {
+  const name = prompt('Nome da nova pasta:');
+  if (!name?.trim()) return;
+  createOutlookFolder(name.trim());
+}
+
+async function createOutlookFolder(name) {
+  if (!state.accessToken) return;
+  try {
+    const res = await fetch('https://graph.microsoft.com/v1.0/me/mailFolders', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type':'application/json' },
+      body: JSON.stringify({ displayName: name }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showNotif('success','✅',`Pasta "${name}" criada!`);
+    await loadOutlookFolders();
+  } catch(e) { showNotif('error','❌','Erro ao criar pasta: '+e.message); }
+}
+
+function openRenameFolderModal(folderId, currentName) {
+  const name = prompt('Novo nome da pasta:', currentName);
+  if (!name?.trim() || name.trim() === currentName) return;
+  renameOutlookFolder(folderId, name.trim());
+}
+
+async function renameOutlookFolder(folderId, newName) {
+  if (!state.accessToken) return;
+  try {
+    const res = await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/${folderId}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type':'application/json' },
+      body: JSON.stringify({ displayName: newName }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showNotif('success','✅',`Pasta renomeada para "${newName}"!`);
+    await loadOutlookFolders();
+  } catch(e) { showNotif('error','❌','Erro ao renomear: '+e.message); }
+}
+
+async function confirmDeleteFolder(folderId, folderName) {
+  if (!confirm(`Excluir a pasta "${folderName}" e todos os e-mails dentro dela?`)) return;
+  try {
+    const res = await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/${folderId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${state.accessToken}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showNotif('success','✅',`Pasta "${folderName}" excluída!`);
+    await loadOutlookFolders();
+  } catch(e) { showNotif('error','❌','Erro ao excluir pasta: '+e.message); }
+}
+
+// Também atualiza o select de "Mover para..." com pastas do Outlook
+function buildFolderOptions() {
+  if (state.useOutlookFolders && state.outlookFolders.length) {
+    return state.outlookFolders
+      .map(f => `<option value="${f.id}" data-name="${escHtml(f.displayName)}">${escHtml(f.displayName)}</option>`)
+      .join('');
+  }
+  return `<option>Trabalho</option><option>Financeiro</option><option>Marketing</option><option>Pessoal</option><option>Outros</option>`;
+}
+
+async function moveSelectedToFolder(val) {
+  if (!val || !state.selectedEmail) return;
+  const email = state.selectedEmail;
+
+  if (state.useOutlookFolders) {
+    // val é o folderId — pega o nome do option selecionado
+    const sel = document.querySelector('.move-select');
+    const opt = sel?.querySelector(`option[value="${val}"]`);
+    const name = opt?.dataset.name || val;
+    email.folder = name;
+    if (state.connected && state.accessToken) {
+      try {
+        await fetch(`https://graph.microsoft.com/v1.0/me/messages/${email.id}/move`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type':'application/json' },
+          body: JSON.stringify({ destinationId: val }),
+        });
+      } catch(e) { showNotif('error','❌','Erro ao mover: '+e.message); return; }
+    }
+    showNotif('success','✅',`E-mail movido para ${name}`);
+    // Remove da lista atual (estamos dentro de uma pasta específica)
+    state.emails = state.emails.filter(e => e.id !== email.id);
+    state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
+    state.selectedEmail = null;
+    renderEmailList();
+  } else {
+    moveSelected(val);
+  }
 }
 
 
@@ -735,9 +856,9 @@ async function renderEmailDetail(email) {
         <button class="action-btn" onclick="openComposer('replyAll')">↩↩ Resp. todos</button>
         <button class="action-btn" onclick="openComposer('forward')">→ Encaminhar</button>
         <button class="action-btn" onclick="deleteSelected()" style="color:var(--danger);border-color:rgba(226,75,74,0.3)">🗑 Excluir</button>
-        <select class="move-select" onchange="moveSelected(this.value)">
+        <select class="move-select" onchange="moveSelectedToFolder(this.value);this.value=''">
           <option value="">Mover para...</option>
-          <option>Trabalho</option><option>Financeiro</option><option>Marketing</option><option>Pessoal</option><option>Outros</option>
+          ${buildFolderOptions()}
         </select>
       </div>
     </div>
