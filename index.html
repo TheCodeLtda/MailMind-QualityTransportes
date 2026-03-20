@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>MailMind — Assistente de E-mails com IA</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+
+<!-- SETUP SCREEN -->
+<div class="setup-screen" id="setupScreen">
+  <div class="setup-card">
+    <div class="setup-logo">Mail<span>Mind</span> ✦</div>
+    <div class="setup-desc">Automatize sua caixa de entrada com IA. Conecte sua conta Microsoft e configure o Claude para classificar e responder seus e-mails automaticamente.</div>
+
+    <div class="setup-steps">
+      <div class="setup-step">
+        <div class="step-num">1</div>
+        <div class="step-info">
+          <div class="step-title">Chave da API do Claude</div>
+          <div class="step-desc">Necessária para classificação inteligente e chat com seus e-mails</div>
+        </div>
+      </div>
+      <div class="setup-step">
+        <div class="step-num">2</div>
+        <div class="step-info">
+          <div class="step-title">Configuração Microsoft Azure</div>
+          <div class="step-desc">Client ID e Tenant ID do app registrado no Azure AD</div>
+        </div>
+      </div>
+      <div class="setup-step">
+        <div class="step-num">3</div>
+        <div class="step-info">
+          <div class="step-title">Conectar Outlook</div>
+          <div class="step-desc">Autorize o acesso via OAuth 2.0 (Graph API)</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="setup-input-group">
+      <label class="form-label">Chave da API do Claude (Anthropic)</label>
+      <input type="password" class="setup-input" id="claudeApiKey" placeholder="sk-ant-..."/>
+    </div>
+    <div class="setup-input-group">
+      <label class="form-label">Microsoft App Client ID</label>
+      <input type="text" class="setup-input" id="msClientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
+    </div>
+    <div class="setup-input-group">
+      <label class="form-label">Microsoft Tenant ID</label>
+      <input type="text" class="setup-input" id="msTenantId" placeholder="common (ou seu Tenant ID específico)"/>
+    </div>
+    <button class="setup-btn" onclick="saveSetup()">Continuar para Conexão →</button>
+    <div class="setup-link">
+      ⚠️ Sua chave de API é armazenada apenas localmente (localStorage).<br/>
+      <a href="https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank">Como registrar um app no Azure AD →</a>
+    </div>
+  </div>
+</div>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="logo">
+    <div class="logo-icon">✦</div>
+    <div class="logo-text">Mail<span>Mind</span></div>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-label">Navegação</div>
+    <button class="nav-item active" onclick="switchView('emails', this)">
+      <span class="nav-icon">📧</span> Caixa de Entrada
+      <span class="badge" id="unreadBadge">0</span>
+    </button>
+    <button class="nav-item" onclick="switchView('rules', this)">
+      <span class="nav-icon">⚡</span> Regras de IA
+    </button>
+    <button class="nav-item" onclick="switchView('config', this)">
+      <span class="nav-icon">⚙️</span> Configurações
+    </button>
+  </div>
+
+  <div class="sidebar-divider"></div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-label">Pastas</div>
+    <div id="folderList">
+      <div class="folder-item" onclick="filterByFolder('Trabalho')">
+        <div class="folder-dot" style="background:#7C6EFA"></div>
+        Trabalho <span class="folder-count" id="cnt-Trabalho">0</span>
+      </div>
+      <div class="folder-item" onclick="filterByFolder('Financeiro')">
+        <div class="folder-dot" style="background:#5DCAA5"></div>
+        Financeiro <span class="folder-count" id="cnt-Financeiro">0</span>
+      </div>
+      <div class="folder-item" onclick="filterByFolder('Marketing')">
+        <div class="folder-dot" style="background:#EF9F27"></div>
+        Marketing <span class="folder-count" id="cnt-Marketing">0</span>
+      </div>
+      <div class="folder-item" onclick="filterByFolder('Pessoal')">
+        <div class="folder-dot" style="background:#F0997B"></div>
+        Pessoal <span class="folder-count" id="cnt-Pessoal">0</span>
+      </div>
+      <div class="folder-item" onclick="filterByFolder('Outros')">
+        <div class="folder-dot" style="background:#888780"></div>
+        Outros <span class="folder-count" id="cnt-Outros">0</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="sidebar-bottom">
+    <button class="connect-btn" id="connectBtn" onclick="connectOutlook()">
+      <span>🔗</span> Conectar Outlook
+    </button>
+    <div class="connect-status" id="connectStatus">Não conectado</div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- EMAIL LIST PANEL -->
+  <div class="email-panel" id="emailPanel">
+    <div class="panel-header">
+      <div class="panel-title" id="panelTitle">Caixa de Entrada</div>
+      <div class="search-box">
+        <span style="font-size:14px;color:var(--text3)">🔍</span>
+        <input type="text" placeholder="Buscar e-mails..." id="searchInput" oninput="filterEmails()"/>
+      </div>
+    </div>
+    <div class="filter-bar">
+      <button class="filter-chip active" onclick="setFilter('all', this)">Todos</button>
+      <button class="filter-chip" onclick="setFilter('unread', this)">Não lidos</button>
+      <button class="filter-chip" onclick="setFilter('Trabalho', this)">Trabalho</button>
+      <button class="filter-chip" onclick="setFilter('Financeiro', this)">Financeiro</button>
+      <button class="filter-chip" onclick="setFilter('Marketing', this)">Marketing</button>
+    </div>
+    <div class="email-list" id="emailList"></div>
+    <div class="classify-btn-row">
+      <button class="classify-btn" onclick="classifyAllEmails()">⚡ Classificar todos com IA</button>
+    </div>
+  </div>
+
+  <!-- CONTENT AREA -->
+  <div class="content-area" id="contentArea">
+    <div class="status-bar" id="statusBar">
+      <div class="spinner"></div>
+      <span id="statusText">Processando...</span>
+    </div>
+
+    <div class="tab-bar">
+      <div class="tab active" onclick="switchTab('detail', this)">E-mail</div>
+      <div class="tab" onclick="switchTab('chat', this)">💬 Assistente IA</div>
+    </div>
+
+    <!-- EMAIL DETAIL -->
+    <div class="email-detail active" id="detailTab">
+      <div style="display:flex;align-items:center;justify-content:center;height:200px;flex-direction:column;gap:12px;">
+        <div style="font-size:48px;opacity:0.2">📭</div>
+        <div style="color:var(--text3);font-size:14px">Selecione um e-mail para visualizar</div>
+      </div>
+    </div>
+
+    <!-- AI CHAT -->
+    <div class="ai-chat" id="chatTab">
+      <div class="chat-messages" id="chatMessages">
+        <div class="msg assistant">
+          <div class="msg-bubble">
+            Olá! Sou seu assistente de e-mails com IA. Posso te ajudar a:<br/><br/>
+            • <strong>Resumir e-mails</strong> por período ou assunto<br/>
+            • <strong>Classificar e mover</strong> e-mails para pastas<br/>
+            • <strong>Buscar informações</strong> em sua caixa de entrada<br/>
+            • <strong>Analisar padrões</strong> e gerar relatórios<br/><br/>
+            Experimente uma das sugestões abaixo ou faça sua pergunta!
+          </div>
+          <div class="msg-time">agora</div>
+        </div>
+      </div>
+
+      <div class="chat-input-area">
+        <div class="suggestions">
+          <button class="suggestion" onclick="useSuggestion(this)">Resumo dos últimos 7 dias</button>
+          <button class="suggestion" onclick="useSuggestion(this)">Classificar e-mails não lidos</button>
+          <button class="suggestion" onclick="useSuggestion(this)">E-mails importantes hoje</button>
+          <button class="suggestion" onclick="useSuggestion(this)">Quantos e-mails de marketing recebi?</button>
+        </div>
+        <div class="chat-input-row">
+          <textarea class="chat-textarea" id="chatInput"
+            placeholder="Faça uma pergunta sobre seus e-mails..." rows="1"
+            onkeydown="handleChatKey(event)" oninput="autoResize(this)"></textarea>
+          <button class="send-btn" onclick="sendChat()">
+            <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- RULES PANEL -->
+    <div class="rules-panel" id="rulesPanel">
+      <div class="section-title">Regras de Classificação IA</div>
+      <div class="section-sub">Configure como o Claude deve classificar e mover seus e-mails automaticamente.</div>
+      <div id="rulesList"></div>
+      <button class="add-rule-btn" onclick="openAddRule()">+ Adicionar nova regra</button>
+    </div>
+
+    <!-- CONFIG PANEL -->
+    <div class="config-panel" id="configPanel">
+      <div class="section-title">Configurações</div>
+      <div class="section-sub">Configure sua integração com Outlook e Claude.</div>
+
+      <div class="config-group">
+        <div class="config-group-title">API Claude</div>
+        <div class="config-row">
+          <div>
+            <div class="config-label">Chave da API</div>
+            <div class="config-sub">Sua chave Anthropic (sk-ant-...)</div>
+          </div>
+          <input type="password" class="config-input" id="configApiKey" placeholder="sk-ant-..."/>
+        </div>
+        <div class="config-row">
+          <div>
+            <div class="config-label">Modelo</div>
+            <div class="config-sub">Modelo Claude a ser usado</div>
+          </div>
+          <select class="config-input" id="configModel">
+            <option value="claude-sonnet-4-20250514">Claude Sonnet 4 (Recomendado)</option>
+            <option value="claude-opus-4-20250514">Claude Opus 4 (Mais capaz)</option>
+            <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (Mais rápido)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="config-group">
+        <div class="config-group-title">Microsoft Graph API</div>
+        <div class="config-row">
+          <div>
+            <div class="config-label">Client ID</div>
+            <div class="config-sub">ID do app no Azure AD</div>
+          </div>
+          <input type="text" class="config-input" id="configClientId" placeholder="xxxxxxxx-xxxx-..."/>
+        </div>
+        <div class="config-row">
+          <div>
+            <div class="config-label">Tenant ID</div>
+            <div class="config-sub">Seu tenant Microsoft</div>
+          </div>
+          <input type="text" class="config-input" id="configTenantId" placeholder="common"/>
+        </div>
+        <div class="config-row">
+          <div>
+            <div class="config-label">Redirect URI</div>
+            <div class="config-sub">URL de callback OAuth</div>
+          </div>
+          <input type="text" class="config-input" id="configRedirectUri" placeholder="http://localhost"/>
+        </div>
+      </div>
+
+      <div class="config-group">
+        <div class="config-group-title">Automação</div>
+        <div class="config-row">
+          <div>
+            <div class="config-label">Classificar automaticamente</div>
+            <div class="config-sub">Classificar e-mails ao carregar</div>
+          </div>
+          <label class="rule-toggle">
+            <input type="checkbox" id="autoClassify" checked/>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="config-row">
+          <div>
+            <div class="config-label">Máximo de e-mails por lote</div>
+            <div class="config-sub">Número de e-mails processados por vez</div>
+          </div>
+          <input type="number" class="config-input" id="configBatchSize" value="20" min="5" max="50" style="width:80px"/>
+        </div>
+      </div>
+
+      <button class="save-config-btn" onclick="saveConfig()">Salvar Configurações</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: ADD RULE -->
+<div class="modal-overlay" id="ruleModal">
+  <div class="modal">
+    <div class="modal-title">Nova Regra de Classificação</div>
+    <div class="modal-sub">O Claude usará esta regra para mover e-mails automaticamente.</div>
+
+    <div class="form-group">
+      <label class="form-label">Nome da Regra</label>
+      <input type="text" class="form-input" id="ruleName" placeholder="Ex: E-mails de Fatura"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Critério (palavras-chave, padrões no corpo)</label>
+      <textarea class="form-textarea" id="ruleCriteria" placeholder="Ex: fatura, NF, nota fiscal, cobrança, vencimento, pagamento"></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Mover para pasta</label>
+      <select class="form-select" id="ruleFolder">
+        <option>Financeiro</option>
+        <option>Trabalho</option>
+        <option>Marketing</option>
+        <option>Pessoal</option>
+        <option>Outros</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Prioridade</label>
+      <select class="form-select" id="rulePriority">
+        <option value="high">Alta</option>
+        <option value="medium" selected>Média</option>
+        <option value="low">Baixa</option>
+      </select>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal()">Cancelar</button>
+      <button class="btn-save" onclick="saveRule()">Salvar Regra</button>
+    </div>
+  </div>
+</div>
+
+<!-- NOTIFICATION -->
+<div class="notification" id="notification">
+  <span id="notifIcon">✅</span>
+  <span id="notifText">Ação realizada com sucesso</span>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
