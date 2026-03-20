@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>MailMind — Assistente de E-mails com IA</title>
+<title>MailMind — Quality Transportes</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="styles.css"/>
 </head>
@@ -12,50 +12,65 @@
 <!-- SETUP SCREEN -->
 <div class="setup-screen" id="setupScreen">
   <div class="setup-card">
-    <div class="setup-logo">Mail<span>Mind</span> ✦</div>
-    <div class="setup-desc">Automatize sua caixa de entrada com IA. Conecte sua conta Microsoft e configure o Claude para classificar e responder seus e-mails automaticamente.</div>
 
-    <div class="setup-steps">
-      <div class="setup-step">
-        <div class="step-num">1</div>
-        <div class="step-info">
-          <div class="step-title">Chave da API do Claude</div>
-          <div class="step-desc">Necessária para classificação inteligente e chat com seus e-mails</div>
-        </div>
-      </div>
-      <div class="setup-step">
-        <div class="step-num">2</div>
-        <div class="step-info">
-          <div class="step-title">Configuração Microsoft Azure</div>
-          <div class="step-desc">Client ID e Tenant ID do app registrado no Azure AD</div>
-        </div>
-      </div>
-      <div class="setup-step">
-        <div class="step-num">3</div>
-        <div class="step-info">
-          <div class="step-title">Conectar Outlook</div>
-          <div class="step-desc">Autorize o acesso via OAuth 2.0 (Graph API)</div>
-        </div>
-      </div>
+    <!-- Logo -->
+    <div class="setup-logo">Mail<span>Mind</span> <span class="setup-logo-sub">Quality Transportes</span></div>
+    <div class="setup-desc">Configure em 3 passos para começar a usar.</div>
+
+    <!-- Progress bar -->
+    <div class="setup-progress-track">
+      <div class="setup-progress-fill" id="setupProgressFill" style="width:33%"></div>
+    </div>
+    <div class="setup-step-indicators">
+      <span class="step-dot active" id="dot1">1</span>
+      <span class="step-line"></span>
+      <span class="step-dot" id="dot2">2</span>
+      <span class="step-line"></span>
+      <span class="step-dot" id="dot3">3</span>
     </div>
 
-    <div class="setup-input-group">
-      <label class="form-label">Chave da API do Claude (Anthropic)</label>
-      <input type="password" class="setup-input" id="claudeApiKey" placeholder="sk-ant-..."/>
+    <!-- STEP 1 — Claude API Key -->
+    <div class="setup-step-panel active" id="stepPanel1">
+      <div class="step-panel-title">🤖 Chave da API do Claude</div>
+      <div class="step-panel-desc">Necessária para classificação inteligente e chat com seus e-mails.</div>
+      <div class="setup-input-group">
+        <label class="form-label">Chave Anthropic</label>
+        <input type="password" class="setup-input" id="claudeApiKey" placeholder="sk-ant-..."/>
+      </div>
+      <div class="setup-hint">🔒 Armazenada apenas localmente no seu navegador.</div>
+      <button class="setup-btn" onclick="setupNext(1)">Próximo →</button>
     </div>
-    <div class="setup-input-group">
-      <label class="form-label">Microsoft App Client ID</label>
-      <input type="text" class="setup-input" id="msClientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
+
+    <!-- STEP 2 — Azure -->
+    <div class="setup-step-panel" id="stepPanel2">
+      <div class="step-panel-title">☁️ Configuração Microsoft Azure</div>
+      <div class="step-panel-desc">Client ID e Tenant ID do app registrado no Azure AD.</div>
+      <div class="setup-input-group">
+        <label class="form-label">Microsoft App Client ID</label>
+        <input type="text" class="setup-input" id="msClientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
+      </div>
+      <div class="setup-input-group">
+        <label class="form-label">Microsoft Tenant ID</label>
+        <input type="text" class="setup-input" id="msTenantId" placeholder="common (ou seu Tenant ID específico)"/>
+      </div>
+      <div class="setup-hint"><a href="https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank">Como registrar um app no Azure AD →</a></div>
+      <div class="setup-btn-row">
+        <button class="setup-btn-back" onclick="setupBack(2)">← Voltar</button>
+        <button class="setup-btn" onclick="setupNext(2)">Próximo →</button>
+      </div>
     </div>
-    <div class="setup-input-group">
-      <label class="form-label">Microsoft Tenant ID</label>
-      <input type="text" class="setup-input" id="msTenantId" placeholder="common (ou seu Tenant ID específico)"/>
+
+    <!-- STEP 3 — Conectar -->
+    <div class="setup-step-panel" id="stepPanel3">
+      <div class="step-panel-title">🔗 Conectar Outlook</div>
+      <div class="step-panel-desc">Tudo pronto! Autorize o acesso à sua conta Microsoft via OAuth 2.0.</div>
+      <div class="setup-summary" id="setupSummary"></div>
+      <div class="setup-btn-row">
+        <button class="setup-btn-back" onclick="setupBack(3)">← Voltar</button>
+        <button class="setup-btn" onclick="saveSetup()">Salvar e Entrar →</button>
+      </div>
     </div>
-    <button class="setup-btn" onclick="saveSetup()">Continuar para Conexão →</button>
-    <div class="setup-link">
-      ⚠️ Sua chave de API é armazenada apenas localmente (localStorage).<br/>
-      <a href="https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank">Como registrar um app no Azure AD →</a>
-    </div>
+
   </div>
 </div>
 
@@ -63,7 +78,7 @@
 <div class="sidebar">
   <div class="logo">
     <div class="logo-icon">✦</div>
-    <div class="logo-text">Mail<span>Mind</span></div>
+    <div class="logo-text">Mail<span>Mind</span><div class="logo-company">Quality Transportes</div></div>
   </div>
 
   <div class="sidebar-section">
@@ -206,16 +221,19 @@
     <!-- CONFIG PANEL -->
     <div class="config-panel" id="configPanel">
       <div class="section-title">Configurações</div>
-      <div class="section-sub">Configure sua integração com Outlook e Claude.</div>
+      <div class="section-sub">Visualize e altere suas credenciais e preferências.</div>
 
       <div class="config-group">
-        <div class="config-group-title">API Claude</div>
+        <div class="config-group-title">🤖 API Claude</div>
         <div class="config-row">
           <div>
             <div class="config-label">Chave da API</div>
             <div class="config-sub">Sua chave Anthropic (sk-ant-...)</div>
           </div>
-          <input type="password" class="config-input" id="configApiKey" placeholder="sk-ant-..."/>
+          <div class="config-input-wrap">
+            <input type="password" class="config-input" id="configApiKey" placeholder="sk-ant-..."/>
+            <button class="config-eye-btn" onclick="toggleVisibility('configApiKey', this)" title="Mostrar/ocultar">👁</button>
+          </div>
         </div>
         <div class="config-row">
           <div>
@@ -231,7 +249,7 @@
       </div>
 
       <div class="config-group">
-        <div class="config-group-title">Microsoft Graph API</div>
+        <div class="config-group-title">☁️ Microsoft Graph API</div>
         <div class="config-row">
           <div>
             <div class="config-label">Client ID</div>
@@ -251,12 +269,12 @@
             <div class="config-label">Redirect URI</div>
             <div class="config-sub">URL de callback OAuth</div>
           </div>
-          <input type="text" class="config-input" id="configRedirectUri" placeholder="http://localhost"/>
+          <input type="text" class="config-input" id="configRedirectUri" placeholder="http://localhost:3000"/>
         </div>
       </div>
 
       <div class="config-group">
-        <div class="config-group-title">Automação</div>
+        <div class="config-group-title">⚙️ Automação</div>
         <div class="config-row">
           <div>
             <div class="config-label">Classificar automaticamente</div>
@@ -276,7 +294,10 @@
         </div>
       </div>
 
-      <button class="save-config-btn" onclick="saveConfig()">Salvar Configurações</button>
+      <div class="config-actions">
+        <button class="save-config-btn" onclick="saveConfig()">💾 Salvar Configurações</button>
+        <button class="reset-config-btn" onclick="resetConfig()">🗑 Limpar e Reiniciar Setup</button>
+      </div>
     </div>
   </div>
 </div>

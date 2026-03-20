@@ -101,6 +101,7 @@ const DEFAULT_RULES = [
 function init() {
   const cfg = loadConfig();
   if (!cfg.claudeApiKey) {
+    showSetupStep(1);
     document.getElementById('setupScreen').classList.remove('hidden');
   } else {
     document.getElementById('setupScreen').classList.add('hidden');
@@ -119,17 +120,62 @@ function loadApp(cfg) {
   state.emails = DEMO_EMAILS;
   state.filteredEmails = [...state.emails];
 
-  document.getElementById('configApiKey').value    = cfg.claudeApiKey || '';
-  document.getElementById('configClientId').value  = cfg.clientId || '';
-  document.getElementById('configTenantId').value  = cfg.tenantId || '';
+  // Preenche painel de configurações com valores salvos
+  document.getElementById('configApiKey').value      = cfg.claudeApiKey || '';
+  document.getElementById('configClientId').value    = cfg.clientId || '';
+  document.getElementById('configTenantId').value    = cfg.tenantId || '';
   document.getElementById('configRedirectUri').value = cfg.redirectUri || window.location.origin;
-  document.getElementById('msClientId').value      = cfg.clientId || '';
-  document.getElementById('msTenantId').value      = cfg.tenantId || 'common';
+  if (document.getElementById('configModel'))
+    document.getElementById('configModel').value = cfg.model || 'claude-sonnet-4-20250514';
+  if (document.getElementById('autoClassify'))
+    document.getElementById('autoClassify').checked = cfg.autoClassify !== false;
+  if (document.getElementById('configBatchSize'))
+    document.getElementById('configBatchSize').value = cfg.batchSize || 20;
 
   renderEmailList();
   renderRules();
   updateFolderCounts();
   updateUnreadBadge();
+}
+
+// ── Setup wizard ────────────────────────────────────────────
+function showSetupStep(step) {
+  [1,2,3].forEach(n => {
+    document.getElementById('stepPanel' + n)?.classList.toggle('active', n === step);
+    const dot = document.getElementById('dot' + n);
+    if (dot) {
+      dot.classList.toggle('active', n <= step);
+      dot.classList.toggle('done',   n < step);
+    }
+  });
+  const pct = step === 1 ? 33 : step === 2 ? 66 : 100;
+  document.getElementById('setupProgressFill').style.width = pct + '%';
+}
+
+function setupNext(currentStep) {
+  if (currentStep === 1) {
+    const key = document.getElementById('claudeApiKey').value.trim();
+    if (!key || !key.startsWith('sk-')) {
+      showNotif('error', '❌', 'Insira uma chave válida (começa com sk-)'); return;
+    }
+    showSetupStep(2);
+  } else if (currentStep === 2) {
+    const clientId = document.getElementById('msClientId').value.trim();
+    if (!clientId) { showNotif('error', '❌', 'Insira o Client ID do Azure'); return; }
+    // Monta resumo no step 3
+    const tenantId = document.getElementById('msTenantId').value.trim() || 'common';
+    document.getElementById('setupSummary').innerHTML = `
+      <div class="summary-row"><span>Chave Claude</span><span>sk-ant-••••••••</span></div>
+      <div class="summary-row"><span>Client ID</span><span>${escHtml(clientId.substring(0,8))}...</span></div>
+      <div class="summary-row"><span>Tenant ID</span><span>${escHtml(tenantId)}</span></div>
+      <div class="summary-row"><span>Redirect URI</span><span>${escHtml(window.location.origin)}</span></div>
+    `;
+    showSetupStep(3);
+  }
+}
+
+function setupBack(currentStep) {
+  showSetupStep(currentStep - 1);
 }
 
 function saveSetup() {
@@ -139,11 +185,30 @@ function saveSetup() {
 
   if (!key) { showNotif('error', '❌', 'Insira sua chave da API do Claude'); return; }
 
-  const cfg = { claudeApiKey: key, clientId, tenantId, redirectUri: window.location.origin, model: 'claude-sonnet-4-20250514' };
+  const cfg = {
+    claudeApiKey: key, clientId, tenantId,
+    redirectUri: window.location.origin,
+    model: 'claude-sonnet-4-20250514',
+    autoClassify: true, batchSize: 20,
+  };
   localStorage.setItem('mailmind_config', JSON.stringify(cfg));
   document.getElementById('setupScreen').classList.add('hidden');
   loadApp(cfg);
   showNotif('success', '✅', 'Configuração salva! Bem-vindo ao MailMind.');
+}
+
+// ── Config panel ─────────────────────────────────────────────
+function toggleVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (input.type === 'password') { input.type = 'text';     btn.textContent = '🙈'; }
+  else                           { input.type = 'password'; btn.textContent = '👁';  }
+}
+
+function resetConfig() {
+  if (!confirm('Isso vai apagar todas as configurações e voltar ao setup inicial. Continuar?')) return;
+  localStorage.removeItem('mailmind_config');
+  localStorage.removeItem('mailmind_rules');
+  location.reload();
 }
 
 // ============================================================
