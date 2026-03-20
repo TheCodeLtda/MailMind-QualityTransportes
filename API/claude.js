@@ -4,12 +4,15 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Chave da API vem do corpo da requisição
-  const { apiKey, ...body } = req.body;
+  // Chave vem da variável de ambiente do Vercel (mais seguro)
+  const apiKey = process.env.ANTHROPIC_API_KEY;
 
   if (!apiKey) {
-    return res.status(400).json({ error: 'API key não fornecida' });
+    return res.status(500).json({ error: 'ANTHROPIC_API_KEY não configurada no Vercel' });
   }
+
+  // Remove apiKey do body caso venha do frontend (não é mais necessária)
+  const { apiKey: _ignored, ...body } = req.body;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
