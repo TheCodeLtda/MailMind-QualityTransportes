@@ -202,30 +202,38 @@ async function fetchEmails() {
       'https://graph.microsoft.com/v1.0/me/messages' +
       '?$top=50&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance' +
       '&$orderby=receivedDateTime desc',
-      { headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type': 'application/json' } }
+      { headers: {
+          Authorization: `Bearer ${state.accessToken}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'outlook.body-content-type="html"'   // força retorno em HTML
+      }}
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
 
-    state.emails = data.value.map(m => ({
-      id:             m.id,
-      from:           m.from?.emailAddress?.address || '',
-      fromName:       m.from?.emailAddress?.name || '',
-      to:             (m.toRecipients || []).map(r => r.emailAddress?.address).filter(Boolean),
-      cc:             (m.ccRecipients  || []).map(r => r.emailAddress?.address).filter(Boolean),
-      subject:        m.subject || '(sem assunto)',
-      preview:        m.bodyPreview || '',
-      bodyHtml:       m.body?.contentType === 'html' ? m.body.content : null,
-      bodyText:       m.body?.contentType === 'text' ? m.body.content : stripHtml(m.body?.content || ''),
-      date:           m.receivedDateTime,
-      dateFormatted:  formatDate(m.receivedDateTime),
-      unread:         !m.isRead,
-      hasAttachments: m.hasAttachments || false,
-      importance:     m.importance || 'normal',
-      folder:         'Outros',
-      tag:            '',
-      attachments:    null, // carregado sob demanda
-    }));
+    state.emails = data.value.map(m => {
+      const contentType = (m.body?.contentType || '').toLowerCase();
+      const isHtml = contentType === 'html';
+      return {
+        id:             m.id,
+        from:           m.from?.emailAddress?.address || '',
+        fromName:       m.from?.emailAddress?.name || '',
+        to:             (m.toRecipients || []).map(r => r.emailAddress?.address).filter(Boolean),
+        cc:             (m.ccRecipients  || []).map(r => r.emailAddress?.address).filter(Boolean),
+        subject:        m.subject || '(sem assunto)',
+        preview:        m.bodyPreview || '',
+        bodyHtml:       isHtml ? m.body.content : wrapTextAsHtml(m.body?.content || ''),
+        bodyText:       stripHtml(m.body?.content || ''),
+        date:           m.receivedDateTime,
+        dateFormatted:  formatDate(m.receivedDateTime),
+        unread:         !m.isRead,
+        hasAttachments: m.hasAttachments || false,
+        importance:     m.importance || 'normal',
+        folder:         'Outros',
+        tag:            '',
+        attachments:    null,
+      };
+    });
     state.filteredEmails = [...state.emails];
     renderEmailList();
     updateFolderCounts();
@@ -572,44 +580,74 @@ async function renderEmailBody(email) {
   if (!area) return;
 
   if (email.bodyHtml) {
-    // Resolve imagens inline CID se tivermos token
     let html = email.bodyHtml;
+
+    // Resolve imagens inline CID → base64
     if (state.accessToken && email.hasAttachments) {
       html = await resolveCidImages(email.id, html);
     }
-    // Renderiza em iframe sandboxed para segurança
+
+    // Wrap com estilos inline (sem depender de herança do parent)
+    const fullHtml = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html, body {
+    margin: 0; padding: 8px 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    font-size: 14px; line-height: 1.7;
+    color: #c8c6d8; background: transparent;
+    word-wrap: break-word; overflow-wrap: break-word;
+  }
+  img { max-width: 100% !important; height: auto !important; border-radius: 4px; display: block; }
+  a   { color: #7C6EFA; }
+  table { max-width: 100% !important; border-collapse: collapse; }
+  td, th { padding: 4px 8px; }
+  blockquote {
+    border-left: 3px solid rgba(255,255,255,0.15);
+    margin: 8px 0; padding: 4px 12px; color: #888;
+  }
+  pre, code {
+    background: rgba(255,255,255,0.05); border-radius: 4px;
+    padding: 2px 6px; font-size: 13px;
+  }
+  /* Fix imagens de fundo branco em e-mails com fundo forçado */
+  [bgcolor], [background] { background: transparent !important; }
+  /* Collapse espaços excessivos de &nbsp; */
+  body * { max-width: 100% !important; }
+</style>
+</head>
+<body>${html}</body>
+</html>`;
+
     area.innerHTML = '';
     const iframe = document.createElement('iframe');
     iframe.className = 'email-iframe';
-    iframe.setAttribute('sandbox', 'allow-same-origin');
+    // srcdoc é a forma mais confiável — não depende de blob URL nem doc.write
+    iframe.srcdoc = fullHtml;
+    // Permite imagens externas (https) mas bloqueia scripts e forms
+    iframe.setAttribute('sandbox', 'allow-same-origin allow-popups');
     iframe.setAttribute('scrolling', 'no');
+    iframe.setAttribute('referrerpolicy', 'no-referrer');
     area.appendChild(iframe);
 
-    const doc = iframe.contentDocument || iframe.contentWindow.document;
-    doc.open();
-    doc.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-      <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-               font-size: 14px; line-height: 1.7; color: #c8c6d8;
-               background: transparent; margin: 0; padding: 0; word-wrap: break-word; }
-        img  { max-width: 100%; height: auto; border-radius: 6px; }
-        a    { color: #7C6EFA; }
-        table{ max-width: 100%; }
-        blockquote { border-left: 3px solid #333; margin: 8px 0; padding: 4px 12px; color: #888; }
-        pre, code { background: #1c1f2a; border-radius: 6px; padding: 2px 6px; font-size: 13px; }
-      </style></head><body>${html}</body></html>`);
-    doc.close();
-
-    // Auto-resize iframe
-    const resize = () => {
+    // Auto-resize robusto: tenta várias vezes até o conteúdo renderizar
+    const tryResize = (attempts = 0) => {
       try {
-        const h = iframe.contentDocument.body.scrollHeight;
-        iframe.style.height = Math.max(h + 32, 200) + 'px';
-      } catch {}
+        const body = iframe.contentDocument?.body;
+        if (!body) { if (attempts < 20) setTimeout(() => tryResize(attempts + 1), 150); return; }
+        const h = body.scrollHeight || body.offsetHeight;
+        if (h < 10 && attempts < 20) { setTimeout(() => tryResize(attempts + 1), 150); return; }
+        iframe.style.height = Math.max(h + 24, 120) + 'px';
+        // Re-check depois das imagens carregarem
+        if (attempts < 8) setTimeout(() => tryResize(attempts + 1), 500);
+      } catch { if (attempts < 20) setTimeout(() => tryResize(attempts + 1), 150); }
     };
-    iframe.onload = resize;
-    setTimeout(resize, 300);
-    setTimeout(resize, 800);
+    iframe.onload = () => tryResize();
+    setTimeout(() => tryResize(), 100);
+
   } else {
     // Fallback: texto puro formatado
     area.innerHTML = `<div class="detail-body">${formatText(email.bodyText || email.preview || '')}</div>`;
@@ -934,6 +972,14 @@ function stripHtml(html) {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
+}
+
+// Converte texto puro em HTML simples para o iframe
+function wrapTextAsHtml(text) {
+  if (!text) return '';
+  return text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\n/g,'<br>');
 }
 
 function getInitials(name) {

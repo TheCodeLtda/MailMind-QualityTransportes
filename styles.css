@@ -252,15 +252,18 @@ body {
 .recipient-value { color: var(--text2); }
 
 /* Email iframe body */
-.email-body-area { padding: 0 0 24px; }
+.email-body-area { padding: 0 0 32px; overflow: hidden; }
 .body-loading {
   display: flex; align-items: center; gap: 8px;
   font-size: 13px; color: var(--text3); padding: 24px 0;
 }
 .email-iframe {
-  width: 100%; border: none; background: transparent;
-  min-height: 200px; display: block;
-  transition: height 0.3s;
+  width: 100%;
+  border: none;
+  background: transparent;
+  min-height: 120px;
+  display: block;
+  overflow: hidden;
 }
 
 /* Attachments */
