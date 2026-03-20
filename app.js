@@ -385,9 +385,27 @@ function renderEmailList() {
 function selectEmail(id) {
   state.selectedEmail=state.emails.find(e=>e.id===id);
   if(!state.selectedEmail) return;
-  state.selectedEmail.unread=false;
+  // Marca como lido localmente
+  if (state.selectedEmail.unread) {
+    state.selectedEmail.unread=false;
+    // Marca como lido no Outlook via Graph API (sem await para não bloquear UI)
+    if (state.connected && state.accessToken) markAsRead(state.selectedEmail.id);
+  }
   renderEmailList(); renderEmailDetail(state.selectedEmail);
   switchTab('detail',document.querySelectorAll('.tab')[0]); updateUnreadBadge();
+}
+
+async function markAsRead(emailId) {
+  try {
+    await fetch(`https://graph.microsoft.com/v1.0/me/messages/${emailId}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${state.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ isRead: true }),
+    });
+  } catch(e) { console.warn('markAsRead:', e); }
 }
 
 // ============================================================
@@ -631,6 +649,114 @@ function switchTab(tab,btn){
 }
 
 // ============================================================
+// RESIZE — painéis arrastáveis
+// ============================================================
+function initResize() {
+  // Larguras salvas
+  const savedSidebar = parseInt(localStorage.getItem('mm_sidebar_w')) || 260;
+  const savedEmail   = parseInt(localStorage.getItem('mm_email_w'))   || 380;
+
+  const sidebar    = document.querySelector('.sidebar');
+  const emailPanel = document.getElementById('emailPanel');
+  const main       = document.querySelector('.main');
+  const rulesPanel = document.getElementById('rulesPanel');
+  const configPanel= document.getElementById('configPanel');
+
+  // Aplica larguras salvas
+  applySidebarWidth(savedSidebar);
+  applyEmailWidth(savedEmail);
+
+  function applySidebarWidth(w) {
+    w = Math.max(180, Math.min(400, w));
+    sidebar.style.width = w + 'px';
+    main.style.marginLeft = w + 'px';
+    rulesPanel.style.left  = w + 'px';
+    configPanel.style.left = w + 'px';
+  }
+
+  function applyEmailWidth(w) {
+    w = Math.max(240, Math.min(600, w));
+    emailPanel.style.width = w + 'px';
+    emailPanel.style.flexShrink = '0';
+  }
+
+  // Cria handle entre sidebar e main
+  const handleSidebar = document.createElement('div');
+  handleSidebar.className = 'resize-handle resize-handle-sidebar';
+  document.body.appendChild(handleSidebar);
+
+  // Cria handle entre lista de e-mails e detalhe
+  const handleEmail = document.createElement('div');
+  handleEmail.className = 'resize-handle resize-handle-email';
+  document.body.appendChild(handleEmail);
+
+  function positionHandles() {
+    const sw = sidebar.getBoundingClientRect().width;
+    const ew = emailPanel.getBoundingClientRect().width;
+    handleSidebar.style.left = (sw - 3) + 'px';
+    // Handle de email só visível na view de emails
+    handleEmail.style.left   = (sw + ew - 3) + 'px';
+    handleEmail.style.display = state.currentView === 'emails' ? 'block' : 'none';
+  }
+
+  positionHandles();
+
+  // Drag sidebar
+  let dragging = null, startX = 0, startW = 0;
+
+  handleSidebar.addEventListener('mousedown', e => {
+    dragging = 'sidebar';
+    startX = e.clientX;
+    startW = sidebar.getBoundingClientRect().width;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  handleEmail.addEventListener('mousedown', e => {
+    dragging = 'email';
+    startX = e.clientX;
+    startW = emailPanel.getBoundingClientRect().width;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const delta = e.clientX - startX;
+    if (dragging === 'sidebar') {
+      const newW = startW + delta;
+      applySidebarWidth(newW);
+      localStorage.setItem('mm_sidebar_w', Math.max(180, Math.min(400, newW)));
+    } else {
+      const newW = startW + delta;
+      applyEmailWidth(newW);
+      localStorage.setItem('mm_email_w', Math.max(240, Math.min(600, newW)));
+    }
+    positionHandles();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = null;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+
+  // Reposiciona handles ao trocar view
+  const origSwitchView = switchView;
+  window._switchViewOrig = origSwitchView;
+  window.switchView = function(view, btn) {
+    origSwitchView(view, btn);
+    setTimeout(positionHandles, 10);
+  };
+}
+
+// ============================================================
 // BOOTSTRAP
 // ============================================================
 init();
+document.addEventListener('DOMContentLoaded', initResize);
+// Fallback caso DOMContentLoaded já tenha disparado
+if (document.readyState !== 'loading') initResize();

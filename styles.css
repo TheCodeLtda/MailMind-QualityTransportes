@@ -662,8 +662,17 @@ input:checked + .toggle-slider:before { transform: translateX(16px); }
 .summary-row span:first-child { color: var(--text3); }
 .summary-row span:last-child  { color: var(--text); font-weight: 500; font-family: monospace; font-size: 12px; }
 
-.progress-bar { height: 3px; background: var(--border2); border-radius: 2px; overflow: hidden; }
-.progress-fill {
-  height: 100%; background: var(--accent); border-radius: 2px;
-  width: 0%; transition: width 0.3s;
+/* ============================================================
+   RESIZE HANDLES
+   ============================================================ */
+.resize-handle {
+  position: fixed; top: 0; bottom: 0; width: 6px; z-index: 200;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
 }
+.resize-handle:hover,
+.resize-handle:active {
+  background: rgba(124,110,250,0.35);
+}
+
