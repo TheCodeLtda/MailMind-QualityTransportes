@@ -684,6 +684,46 @@ input:checked + .toggle-slider:before { transform: translateX(16px); }
 .page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* ============================================================
+   COMPOSER — responder / encaminhar
+   ============================================================ */
+.composer-panel {
+  border-top: 1px solid var(--border); background: var(--surface);
+  display: flex; flex-direction: column; flex-shrink: 0;
+  max-height: 420px;
+}
+.composer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px; border-bottom: 1px solid var(--border);
+}
+.composer-title { font-size: 13px; font-weight: 600; color: var(--text2); }
+.composer-close {
+  background: none; border: none; color: var(--text3); font-size: 16px;
+  cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: color 0.15s;
+}
+.composer-close:hover { color: var(--danger); }
+.composer-fields { border-bottom: 1px solid var(--border); }
+.composer-field {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 20px; border-bottom: 1px solid var(--border);
+}
+.composer-field:last-child { border-bottom: none; }
+.composer-field label { font-size: 12px; color: var(--text3); width: 50px; flex-shrink: 0; }
+.composer-field input {
+  flex: 1; background: none; border: none; outline: none;
+  color: var(--text); font-family: var(--font-body); font-size: 13px;
+}
+.composer-body {
+  flex: 1; overflow-y: auto; padding: 12px 20px;
+  font-size: 14px; line-height: 1.6; color: var(--text);
+  outline: none; min-height: 80px; max-height: 200px;
+}
+.composer-body:empty::before { content: attr(data-placeholder); color: var(--text3); }
+.composer-footer {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 10px 20px; border-top: 1px solid var(--border);
+}
+
+/* ============================================================
    RESIZE HANDLES
    ============================================================ */
 .resize-handle {

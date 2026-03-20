@@ -72,8 +72,9 @@ const state = {
   connected:false, accessToken:null, emails:[], filteredEmails:[],
   selectedEmail:null, currentFilter:'all', currentFolder:null,
   currentView:'emails', rules:[], config:{}, chatHistory:[],
-  // Paginação
   page: { current:1, nextLink:null, prevLinks:[], total:null, pageSize:50 },
+  outlookFolders: [],      // pastas reais do Outlook
+  useOutlookFolders: false, // toggle da configuração
 };
 
 const DEMO_EMAILS = [
@@ -178,6 +179,7 @@ function populateConfigPanel() {
   const fields={configApiKey:cfg.claudeApiKey||'',configClientId:cfg.clientId||'',configTenantId:cfg.tenantId||'',configRedirectUri:cfg.redirectUri||window.location.origin,configModel:cfg.model||'claude-sonnet-4-20250514',configBatchSize:cfg.batchSize||20};
   Object.entries(fields).forEach(([id,val])=>{ const el=document.getElementById(id); if(el) el.value=val; });
   const ac=document.getElementById('autoClassify'); if(ac) ac.checked=cfg.autoClassify!==false;
+  const of=document.getElementById('useOutlookFolders'); if(of) of.checked=cfg.useOutlookFolders===true;
 }
 function saveConfig() {
   const cfg={
@@ -188,9 +190,16 @@ function saveConfig() {
     redirectUri:document.getElementById('configRedirectUri').value.trim()||window.location.origin,
     autoClassify:document.getElementById('autoClassify').checked,
     batchSize:parseInt(document.getElementById('configBatchSize').value)||20,
+    useOutlookFolders:document.getElementById('useOutlookFolders')?.checked||false,
   };
   localStorage.setItem('mailmind_config',JSON.stringify(cfg));
   state.config=cfg;
+  state.useOutlookFolders=cfg.useOutlookFolders;
+  // Atualiza sidebar se conectado
+  if (state.connected) {
+    if (cfg.useOutlookFolders) loadOutlookFolders();
+    else renderSidebarFolders();
+  }
   showNotif('success','✅','Configurações salvas!');
 }
 function toggleVisibility(inputId,btn) {
@@ -237,6 +246,10 @@ function handleToken(token,expiresIn) {
   document.getElementById('connectBtn').classList.add('connected');
   document.getElementById('connectStatus').textContent='Outlook conectado';
   showNotif('success','✅','Outlook conectado com sucesso!');
+  // Carrega pastas do Outlook se habilitado
+  const cfg=loadConfig();
+  state.useOutlookFolders=cfg.useOutlookFolders===true;
+  if(state.useOutlookFolders) loadOutlookFolders();
   fetchEmails();
 }
 function restoreToken() {
@@ -251,8 +264,188 @@ function restoreToken() {
 }
 
 // ============================================================
-// GRAPH API
+// PASTAS DO OUTLOOK
 // ============================================================
+async function loadOutlookFolders() {
+  if (!state.accessToken) return;
+  try {
+    const res = await fetch(
+      'https://graph.microsoft.com/v1.0/me/mailFolders?$top=50&$select=id,displayName,unreadItemCount,totalItemCount',
+      { headers: { Authorization: `Bearer ${state.accessToken}` } }
+    );
+    if (!res.ok) return;
+    const data = await res.json();
+    state.outlookFolders = data.value || [];
+    renderSidebarFolders();
+  } catch(e) { console.warn('loadOutlookFolders:', e); }
+}
+
+function renderSidebarFolders() {
+  const list = document.getElementById('folderList');
+  if (!list) return;
+
+  if (state.useOutlookFolders && state.outlookFolders.length) {
+    // Pastas reais do Outlook
+    const colors = ['#7C6EFA','#5DCAA5','#EF9F27','#F0997B','#E24B4A','#4AACE2','#B26EFA'];
+    list.innerHTML = state.outlookFolders.map((f, i) => `
+      <div class="folder-item" onclick="fetchEmailsByFolder('${f.id}','${escHtml(f.displayName)}')">
+        <div class="folder-dot" style="background:${colors[i % colors.length]}"></div>
+        <span class="folder-name">${escHtml(f.displayName)}</span>
+        <span class="folder-count">${f.unreadItemCount > 0 ? f.unreadItemCount : ''}</span>
+      </div>`).join('');
+  } else {
+    // Pastas fixas do MailMind
+    list.innerHTML = `
+      <div class="folder-item" onclick="filterByFolder('Trabalho')">
+        <div class="folder-dot" style="background:#7C6EFA"></div>
+        Trabalho <span class="folder-count" id="cnt-Trabalho">0</span>
+      </div>
+      <div class="folder-item" onclick="filterByFolder('Financeiro')">
+        <div class="folder-dot" style="background:#5DCAA5"></div>
+        Financeiro <span class="folder-count" id="cnt-Financeiro">0</span>
+      </div>
+      <div class="folder-item" onclick="filterByFolder('Marketing')">
+        <div class="folder-dot" style="background:#EF9F27"></div>
+        Marketing <span class="folder-count" id="cnt-Marketing">0</span>
+      </div>
+      <div class="folder-item" onclick="filterByFolder('Pessoal')">
+        <div class="folder-dot" style="background:#F0997B"></div>
+        Pessoal <span class="folder-count" id="cnt-Pessoal">0</span>
+      </div>
+      <div class="folder-item" onclick="filterByFolder('Outros')">
+        <div class="folder-dot" style="background:#888780"></div>
+        Outros <span class="folder-count" id="cnt-Outros">0</span>
+      </div>`;
+    updateFolderCounts();
+  }
+}
+
+async function fetchEmailsByFolder(folderId, folderName) {
+  if (!state.accessToken) return;
+  document.getElementById('panelTitle').textContent = folderName;
+  state.page.current = 1; state.page.prevLinks = [];
+  showStatus(`Carregando ${folderName}...`);
+  try {
+    const res = await fetch(
+      `https://graph.microsoft.com/v1.0/me/mailFolders/${folderId}/messages` +
+      `?$top=50&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance` +
+      `&$orderby=receivedDateTime desc`,
+      { headers: { Authorization: `Bearer ${state.accessToken}`, 'Prefer':'outlook.body-content-type="html"' } }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    state.emails = data.value.map(buildEmailObj);
+    state.filteredEmails = [...state.emails];
+    state.page.nextLink = data['@odata.nextLink'] || null;
+    renderEmailList(); renderPagination(); hideStatus();
+  } catch(e) { hideStatus(); showNotif('error','❌','Erro: '+e.message); }
+}
+
+
+// ============================================================
+// GRAPH API — REPLY / FORWARD / DELETE
+// ============================================================
+async function sendReply(emailId, bodyHtml, toAll) {
+  const endpoint = toAll ? 'replyAll' : 'reply';
+  await fetch(`https://graph.microsoft.com/v1.0/me/messages/${emailId}/${endpoint}`, {
+    method:'POST',
+    headers:{Authorization:`Bearer ${state.accessToken}`,'Content-Type':'application/json'},
+    body:JSON.stringify({message:{body:{contentType:'html',content:bodyHtml}}}),
+  });
+}
+async function sendForward(emailId, toAddress, bodyHtml) {
+  await fetch(`https://graph.microsoft.com/v1.0/me/messages/${emailId}/forward`, {
+    method:'POST',
+    headers:{Authorization:`Bearer ${state.accessToken}`,'Content-Type':'application/json'},
+    body:JSON.stringify({toRecipients:[{emailAddress:{address:toAddress}}],comment:bodyHtml}),
+  });
+}
+async function deleteEmail(emailId) {
+  await fetch(`https://graph.microsoft.com/v1.0/me/messages/${emailId}`,{
+    method:'DELETE', headers:{Authorization:`Bearer ${state.accessToken}`},
+  });
+}
+
+// ============================================================
+// COMPOSER — responder / encaminhar
+// ============================================================
+function openComposer(mode) {
+  const email = state.selectedEmail; if (!email) return;
+  document.getElementById('composerPanel')?.remove();
+
+  const toVal      = mode==='forward' ? '' : email.from;
+  const subjectVal = (mode==='forward'?'Enc: ':'Re: ') + email.subject;
+  const quoteHtml  = `<br><br><blockquote style="border-left:3px solid #ccc;padding-left:12px;color:#666;margin:0">
+    <p><b>De:</b> ${escHtml(email.fromName)} &lt;${escHtml(email.from)}&gt;<br>
+    <b>Data:</b> ${escHtml(email.dateFormatted||'')}<br>
+    <b>Assunto:</b> ${escHtml(email.subject)}</p>
+    ${email.bodyHtml||escHtml(email.bodyText||'').replace(/\n/g,'<br>')}
+  </blockquote>`;
+
+  const panel = document.createElement('div');
+  panel.id='composerPanel'; panel.className='composer-panel';
+  panel.innerHTML=`
+    <div class="composer-header">
+      <span class="composer-title">${mode==='forward'?'Encaminhar':'Responder'}</span>
+      <button class="composer-close" onclick="document.getElementById('composerPanel').remove()">✕</button>
+    </div>
+    <div class="composer-fields">
+      <div class="composer-field"><label>Para</label>
+        <input id="composerTo" type="email" value="${escHtml(toVal)}" placeholder="destinatario@email.com"/></div>
+      <div class="composer-field"><label>Assunto</label>
+        <input id="composerSubject" type="text" value="${escHtml(subjectVal)}" readonly/></div>
+    </div>
+    <div class="composer-body" id="composerBody" contenteditable="true">${quoteHtml}</div>
+    <div class="composer-footer">
+      <button class="action-btn" onclick="document.getElementById('composerPanel').remove()">Cancelar</button>
+      <button class="action-btn primary" id="composerSendBtn" onclick="submitComposer('${mode}','${email.id}')">
+        ${mode==='forward'?'Encaminhar':'Enviar'}
+      </button>
+    </div>`;
+  document.getElementById('detailTab').appendChild(panel);
+  // Foco no início (antes da citação)
+  const body=document.getElementById('composerBody');
+  body.focus();
+  const range=document.createRange(); range.setStart(body,0); range.collapse(true);
+  const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+}
+
+async function submitComposer(mode, id) {
+  if(!state.accessToken) return;
+  const to=document.getElementById('composerTo')?.value.trim();
+  const bodyHtml=document.getElementById('composerBody')?.innerHTML||'';
+  if(mode==='forward'&&!to){showNotif('error','❌','Informe o destinatário');return;}
+  const btn=document.getElementById('composerSendBtn');
+  if(btn){btn.textContent='Enviando...';btn.disabled=true;}
+  try {
+    if(mode==='forward') await sendForward(id,to,bodyHtml);
+    else await sendReply(id,bodyHtml,mode==='replyAll');
+    document.getElementById('composerPanel')?.remove();
+    showNotif('success','✅','Mensagem enviada!');
+  } catch(e){
+    showNotif('error','❌','Erro ao enviar: '+e.message);
+    if(btn){btn.textContent=mode==='forward'?'Encaminhar':'Enviar';btn.disabled=false;}
+  }
+}
+
+async function deleteSelected() {
+  const email=state.selectedEmail; if(!email) return;
+  if(!confirm(`Mover "${email.subject}" para a lixeira?`)) return;
+  if(state.connected&&state.accessToken){
+    try { await deleteEmail(email.id); } catch(e){showNotif('error','❌','Erro: '+e.message);return;}
+  }
+  state.emails=state.emails.filter(e=>e.id!==email.id);
+  state.filteredEmails=state.filteredEmails.filter(e=>e.id!==email.id);
+  state.selectedEmail=null;
+  document.getElementById('detailTab').innerHTML=`
+    <div style="display:flex;align-items:center;justify-content:center;height:200px;flex-direction:column;gap:12px;">
+      <div style="font-size:48px;opacity:0.2">🗑</div>
+      <div style="color:var(--text3);font-size:14px">E-mail movido para a lixeira</div>
+    </div>`;
+  renderEmailList(); updateFolderCounts(); updateUnreadBadge();
+  showNotif('success','✅','E-mail movido para a lixeira');
+}
+
 function buildEmailObj(m) {
   const isHtml=(m.body?.contentType||'').toLowerCase()==='html';
   return {
@@ -527,7 +720,10 @@ async function renderEmailDetail(email) {
       </div>
       <div class="detail-actions">
         <button class="action-btn primary" onclick="summarizeSelected()">✨ Resumir com IA</button>
-        <button class="action-btn" onclick="replyEmail()">↩ Responder</button>
+        <button class="action-btn" onclick="openComposer('reply')">↩ Responder</button>
+        <button class="action-btn" onclick="openComposer('replyAll')">↩↩ Resp. todos</button>
+        <button class="action-btn" onclick="openComposer('forward')">→ Encaminhar</button>
+        <button class="action-btn" onclick="deleteSelected()" style="color:var(--danger);border-color:rgba(226,75,74,0.3)">🗑 Excluir</button>
         <select class="move-select" onchange="moveSelected(this.value)">
           <option value="">Mover para...</option>
           <option>Trabalho</option><option>Financeiro</option><option>Marketing</option><option>Pessoal</option><option>Outros</option>
@@ -634,8 +830,6 @@ function moveSelected(folder) {
   renderEmailList(); updateFolderCounts();
   showNotif('success','✅',`E-mail movido para ${folder}`);
 }
-function replyEmail() { showNotif('success','📧','Funcionalidade disponível via Outlook Web'); }
-
 // ============================================================
 // AI CHAT
 // ============================================================
