@@ -314,20 +314,17 @@ async function summarizeEmail(email) {
 async function claudeApi(messages, maxTokens = 1000, system = null) {
   const cfg  = loadConfig();
   const body = {
+    apiKey:     cfg.claudeApiKey,          // repassado pelo proxy, nunca exposto no header
     model:      cfg.model || 'claude-sonnet-4-20250514',
     max_tokens: maxTokens,
     messages,
   };
   if (system) body.system = system;
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetch('/api/claude', {  // chama a função serverless do Vercel
     method:  'POST',
-    headers: {
-      'Content-Type':      'application/json',
-      'x-api-key':         cfg.claudeApiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(body),
   });
   return res.json();
 }
