@@ -385,8 +385,11 @@ body {
 /* ============================================================
    RULES PANEL
    ============================================================ */
-.rules-panel { flex: 1; padding: 28px 32px; overflow-y: auto; display: none; }
-.rules-panel.active { display: block; }
+.rules-panel {
+  display: none; position: fixed;
+  left: 260px; top: 0; right: 0; bottom: 0;
+  padding: 28px 32px; overflow-y: auto; background: var(--bg);
+}
 .rules-panel::-webkit-scrollbar { width: 4px; }
 .rules-panel::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
@@ -433,8 +436,11 @@ input:checked + .toggle-slider:before { transform: translateX(16px); }
 /* ============================================================
    CONFIG PANEL
    ============================================================ */
-.config-panel { flex: 1; padding: 28px 32px; overflow-y: auto; display: none; }
-.config-panel.active { display: block; }
+.config-panel {
+  display: none; position: fixed;
+  left: 260px; top: 0; right: 0; bottom: 0;
+  padding: 28px 32px; overflow-y: auto; background: var(--bg);
+}
 
 .config-group {
   background: var(--surface2); border: 1px solid var(--border);
