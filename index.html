@@ -208,97 +208,99 @@
           </button>
         </div>
       </div>
-    </div>
+    </div><!-- /ai-chat -->
 
-    <!-- RULES PANEL -->
-    <div class="rules-panel" id="rulesPanel">
-      <div class="section-title">Regras de Classificação IA</div>
-      <div class="section-sub">Configure como o Claude deve classificar e mover seus e-mails automaticamente.</div>
-      <div id="rulesList"></div>
-      <button class="add-rule-btn" onclick="openAddRule()">+ Adicionar nova regra</button>
-    </div>
+  </div><!-- /content-area -->
 
-    <!-- CONFIG PANEL -->
-    <div class="config-panel" id="configPanel">
-      <div class="section-title">Configurações</div>
-      <div class="section-sub">Visualize e altere suas credenciais e preferências.</div>
+</div><!-- /main -->
 
-      <div class="config-group">
-        <div class="config-group-title">🤖 API Claude</div>
-        <div class="config-row">
-          <div>
-            <div class="config-label">Chave da API</div>
-            <div class="config-sub">Sua chave Anthropic (sk-ant-...)</div>
-          </div>
-          <div class="config-input-wrap">
-            <input type="password" class="config-input" id="configApiKey" placeholder="sk-ant-..."/>
-            <button class="config-eye-btn" onclick="toggleVisibility('configApiKey', this)" title="Mostrar/ocultar">👁</button>
-          </div>
-        </div>
-        <div class="config-row">
-          <div>
-            <div class="config-label">Modelo</div>
-            <div class="config-sub">Modelo Claude a ser usado</div>
-          </div>
-          <select class="config-input" id="configModel">
-            <option value="claude-sonnet-4-20250514">Claude Sonnet 4 (Recomendado)</option>
-            <option value="claude-opus-4-20250514">Claude Opus 4 (Mais capaz)</option>
-            <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (Mais rápido)</option>
-          </select>
-        </div>
+<!-- RULES PANEL — fora do main, direto no body -->
+<div class="rules-panel" id="rulesPanel">
+  <div class="section-title">Regras de Classificação IA</div>
+  <div class="section-sub">Configure como o Claude deve classificar e mover seus e-mails automaticamente.</div>
+  <div id="rulesList"></div>
+  <button class="add-rule-btn" onclick="openAddRule()">+ Adicionar nova regra</button>
+</div>
+
+<!-- CONFIG PANEL — fora do main, direto no body -->
+<div class="config-panel" id="configPanel">
+  <div class="section-title">Configurações</div>
+  <div class="section-sub">Visualize e altere suas credenciais e preferências.</div>
+
+  <div class="config-group">
+    <div class="config-group-title">API Claude</div>
+    <div class="config-row">
+      <div>
+        <div class="config-label">Chave da API</div>
+        <div class="config-sub">Sua chave Anthropic (sk-ant-...)</div>
       </div>
-
-      <div class="config-group">
-        <div class="config-group-title">☁️ Microsoft Graph API</div>
-        <div class="config-row">
-          <div>
-            <div class="config-label">Client ID</div>
-            <div class="config-sub">ID do app no Azure AD</div>
-          </div>
-          <input type="text" class="config-input" id="configClientId" placeholder="xxxxxxxx-xxxx-..."/>
-        </div>
-        <div class="config-row">
-          <div>
-            <div class="config-label">Tenant ID</div>
-            <div class="config-sub">Seu tenant Microsoft</div>
-          </div>
-          <input type="text" class="config-input" id="configTenantId" placeholder="common"/>
-        </div>
-        <div class="config-row">
-          <div>
-            <div class="config-label">Redirect URI</div>
-            <div class="config-sub">URL de callback OAuth</div>
-          </div>
-          <input type="text" class="config-input" id="configRedirectUri" placeholder="http://localhost:3000"/>
-        </div>
-      </div>
-
-      <div class="config-group">
-        <div class="config-group-title">⚙️ Automação</div>
-        <div class="config-row">
-          <div>
-            <div class="config-label">Classificar automaticamente</div>
-            <div class="config-sub">Classificar e-mails ao carregar</div>
-          </div>
-          <label class="rule-toggle">
-            <input type="checkbox" id="autoClassify" checked/>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-        <div class="config-row">
-          <div>
-            <div class="config-label">Máximo de e-mails por lote</div>
-            <div class="config-sub">Número de e-mails processados por vez</div>
-          </div>
-          <input type="number" class="config-input" id="configBatchSize" value="20" min="5" max="50" style="width:80px"/>
-        </div>
-      </div>
-
-      <div class="config-actions">
-        <button class="save-config-btn" onclick="saveConfig()">💾 Salvar Configurações</button>
-        <button class="reset-config-btn" onclick="resetConfig()">🗑 Limpar e Reiniciar Setup</button>
+      <div class="config-input-wrap">
+        <input type="password" class="config-input" id="configApiKey" placeholder="sk-ant-..."/>
+        <button class="config-eye-btn" onclick="toggleVisibility('configApiKey', this)" title="Mostrar/ocultar">👁</button>
       </div>
     </div>
+    <div class="config-row">
+      <div>
+        <div class="config-label">Modelo</div>
+        <div class="config-sub">Modelo Claude a ser usado</div>
+      </div>
+      <select class="config-input" id="configModel">
+        <option value="claude-sonnet-4-20250514">Claude Sonnet 4 (Recomendado)</option>
+        <option value="claude-opus-4-20250514">Claude Opus 4 (Mais capaz)</option>
+        <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (Mais rápido)</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="config-group">
+    <div class="config-group-title">Microsoft Graph API</div>
+    <div class="config-row">
+      <div>
+        <div class="config-label">Client ID</div>
+        <div class="config-sub">ID do app no Azure AD</div>
+      </div>
+      <input type="text" class="config-input" id="configClientId" placeholder="xxxxxxxx-xxxx-..."/>
+    </div>
+    <div class="config-row">
+      <div>
+        <div class="config-label">Tenant ID</div>
+        <div class="config-sub">Seu tenant Microsoft</div>
+      </div>
+      <input type="text" class="config-input" id="configTenantId" placeholder="common"/>
+    </div>
+    <div class="config-row">
+      <div>
+        <div class="config-label">Redirect URI</div>
+        <div class="config-sub">URL de callback OAuth</div>
+      </div>
+      <input type="text" class="config-input" id="configRedirectUri" placeholder="http://localhost:3000"/>
+    </div>
+  </div>
+
+  <div class="config-group">
+    <div class="config-group-title">Automação</div>
+    <div class="config-row">
+      <div>
+        <div class="config-label">Classificar automaticamente</div>
+        <div class="config-sub">Classificar e-mails ao carregar</div>
+      </div>
+      <label class="rule-toggle">
+        <input type="checkbox" id="autoClassify" checked/>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="config-row">
+      <div>
+        <div class="config-label">Máximo de e-mails por lote</div>
+        <div class="config-sub">Número de e-mails processados por vez</div>
+      </div>
+      <input type="number" class="config-input" id="configBatchSize" value="20" min="5" max="50" style="width:80px"/>
+    </div>
+  </div>
+
+  <div class="config-actions">
+    <button class="save-config-btn" onclick="saveConfig()">💾 Salvar Configurações</button>
+    <button class="reset-config-btn" onclick="resetConfig()">🗑 Limpar e Reiniciar Setup</button>
   </div>
 </div>
 
