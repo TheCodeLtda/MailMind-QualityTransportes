@@ -715,9 +715,10 @@ input:checked + .toggle-slider:before { transform: translateX(16px); }
 .composer-body {
   flex: 1; overflow-y: auto; padding: 12px 20px;
   font-size: 14px; line-height: 1.6; color: var(--text);
-  outline: none; min-height: 80px; max-height: 200px;
+  background: none; border: none; outline: none; resize: none;
+  font-family: var(--font-body); min-height: 100px; max-height: 220px;
+  width: 100%; box-sizing: border-box;
 }
-.composer-body:empty::before { content: attr(data-placeholder); color: var(--text3); }
 .composer-footer {
   display: flex; justify-content: flex-end; gap: 8px;
   padding: 10px 20px; border-top: 1px solid var(--border);

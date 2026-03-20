@@ -162,7 +162,7 @@ function loadApp(cfg) {
   state.filteredEmails=[...state.emails];
   // Restaura token do sessionStorage (sobrevive F5)
   if (restoreToken()) {
-    fetchEmails().then(()=>{ renderEmailList(); updateFolderCounts(); updateUnreadBadge(); });
+    fetchEmails().then(()=>{ renderEmailList(); updateFolderCounts(); updateUnreadBadge(); startPolling(); });
   } else {
     renderEmailList(); updateFolderCounts(); updateUnreadBadge();
   }
@@ -208,6 +208,7 @@ function toggleVisibility(inputId,btn) {
 }
 function resetConfig() {
   if(!confirm('Apagar todas as configurações e voltar ao setup? Continuar?')) return;
+  stopPolling();
   localStorage.removeItem('mailmind_config'); localStorage.removeItem('mailmind_rules');
   sessionStorage.removeItem('mm_token'); sessionStorage.removeItem('mm_expires_at');
   location.reload();
@@ -250,7 +251,7 @@ function handleToken(token,expiresIn) {
   const cfg=loadConfig();
   state.useOutlookFolders=cfg.useOutlookFolders===true;
   if(state.useOutlookFolders) loadOutlookFolders();
-  fetchEmails();
+  fetchEmails().then(() => startPolling());
 }
 function restoreToken() {
   const token=sessionStorage.getItem('mm_token');
@@ -375,27 +376,25 @@ function openComposer(mode) {
 
   const toVal      = mode==='forward' ? '' : email.from;
   const subjectVal = (mode==='forward'?'Enc: ':'Re: ') + email.subject;
-  const quoteHtml  = `<br><br><blockquote style="border-left:3px solid #ccc;padding-left:12px;color:#666;margin:0">
-    <p><b>De:</b> ${escHtml(email.fromName)} &lt;${escHtml(email.from)}&gt;<br>
-    <b>Data:</b> ${escHtml(email.dateFormatted||'')}<br>
-    <b>Assunto:</b> ${escHtml(email.subject)}</p>
-    ${email.bodyHtml||escHtml(email.bodyText||'').replace(/\n/g,'<br>')}
-  </blockquote>`;
+
+  // Citação separada — não mistura com o texto que o usuário vai digitar
+  const quotedText = email.bodyText || stripHtml(email.bodyHtml||'') || '';
+  const quoteBlock = `\n\n--- Mensagem original ---\nDe: ${email.fromName} <${email.from}>\nData: ${email.dateFormatted||''}\nAssunto: ${email.subject}\n\n${quotedText.substring(0,2000)}`;
 
   const panel = document.createElement('div');
   panel.id='composerPanel'; panel.className='composer-panel';
   panel.innerHTML=`
     <div class="composer-header">
-      <span class="composer-title">${mode==='forward'?'Encaminhar':'Responder'}</span>
+      <span class="composer-title">${mode==='forward'?'Encaminhar':mode==='replyAll'?'Responder a todos':'Responder'}</span>
       <button class="composer-close" onclick="document.getElementById('composerPanel').remove()">✕</button>
     </div>
     <div class="composer-fields">
       <div class="composer-field"><label>Para</label>
-        <input id="composerTo" type="email" value="${escHtml(toVal)}" placeholder="destinatario@email.com"/></div>
+        <input id="composerTo" type="text" value="${escHtml(toVal)}" placeholder="destinatario@email.com"/></div>
       <div class="composer-field"><label>Assunto</label>
         <input id="composerSubject" type="text" value="${escHtml(subjectVal)}" readonly/></div>
     </div>
-    <div class="composer-body" id="composerBody" contenteditable="true">${quoteHtml}</div>
+    <textarea class="composer-body" id="composerBody" placeholder="Escreva sua mensagem aqui...">${escHtml(quoteBlock)}</textarea>
     <div class="composer-footer">
       <button class="action-btn" onclick="document.getElementById('composerPanel').remove()">Cancelar</button>
       <button class="action-btn primary" id="composerSendBtn" onclick="submitComposer('${mode}','${email.id}')">
@@ -403,18 +402,26 @@ function openComposer(mode) {
       </button>
     </div>`;
   document.getElementById('detailTab').appendChild(panel);
-  // Foco no início (antes da citação)
-  const body=document.getElementById('composerBody');
-  body.focus();
-  const range=document.createRange(); range.setStart(body,0); range.collapse(true);
-  const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+
+  // Foca no início do textarea (antes da citação)
+  const ta = document.getElementById('composerBody');
+  ta.focus();
+  ta.setSelectionRange(0, 0);
+  ta.scrollTop = 0;
 }
 
 async function submitComposer(mode, id) {
   if(!state.accessToken) return;
-  const to=document.getElementById('composerTo')?.value.trim();
-  const bodyHtml=document.getElementById('composerBody')?.innerHTML||'';
+  const to      = document.getElementById('composerTo')?.value.trim();
+  const rawText = document.getElementById('composerBody')?.value||'';
   if(mode==='forward'&&!to){showNotif('error','❌','Informe o destinatário');return;}
+
+  // Separa mensagem do usuário da citação original
+  const parts    = rawText.split('\n\n--- Mensagem original ---');
+  const userText = parts[0].trim();
+  const quote    = parts[1] ? `<br><br><hr style="border:none;border-top:1px solid #ccc"><pre style="font-size:13px;color:#666;white-space:pre-wrap">${escHtml(parts[1])}</pre>` : '';
+  const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px">${escHtml(userText).replace(/\n/g,'<br>')}${quote}</div>`;
+
   const btn=document.getElementById('composerSendBtn');
   if(btn){btn.textContent='Enviando...';btn.disabled=true;}
   try {
@@ -1061,6 +1068,64 @@ function initResize() {
     origSwitchView(view, btn);
     setTimeout(positionHandles, 10);
   };
+}
+
+// ============================================================
+// POLLING — novos e-mails sem recarregar a página
+// ============================================================
+let _pollingTimer = null;
+
+function startPolling() {
+  stopPolling();
+  const interval = 60000; // verifica a cada 60 segundos
+  _pollingTimer = setInterval(checkNewEmails, interval);
+}
+
+function stopPolling() {
+  if (_pollingTimer) { clearInterval(_pollingTimer); _pollingTimer = null; }
+}
+
+async function checkNewEmails() {
+  if (!state.accessToken || !state.connected) return;
+
+  // Pega o ID do e-mail mais recente que já temos
+  const newestDate = state.emails.length > 0 ? state.emails[0].date : null;
+  if (!newestDate) return;
+
+  try {
+    const filter = encodeURIComponent(`receivedDateTime gt ${newestDate}`);
+    const res = await fetch(
+      `https://graph.microsoft.com/v1.0/me/messages?$top=20&$filter=${filter}` +
+      `&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance` +
+      `&$orderby=receivedDateTime desc`,
+      { headers: {
+          Authorization: `Bearer ${state.accessToken}`,
+          'Prefer': 'outlook.body-content-type="html"',
+      }}
+    );
+    if (!res.ok) return;
+    const data = await res.json();
+    const newEmails = (data.value || []).map(buildEmailObj);
+
+    if (newEmails.length === 0) return;
+
+    // Filtra os que realmente ainda não estão na lista
+    const existingIds = new Set(state.emails.map(e => e.id));
+    const toAdd = newEmails.filter(e => !existingIds.has(e.id));
+    if (toAdd.length === 0) return;
+
+    // Insere no início
+    state.emails = [...toAdd, ...state.emails];
+    state.filteredEmails = [...toAdd, ...state.filteredEmails];
+
+    renderEmailList();
+    updateFolderCounts();
+    updateUnreadBadge();
+    renderPagination();
+
+    const plural = toAdd.length > 1 ? 's' : '';
+    showNotif('success', '📬', `${toAdd.length} novo${plural} e-mail${plural} recebido${plural}!`);
+  } catch(e) { console.warn('checkNewEmails:', e); }
 }
 
 // ============================================================
