@@ -416,7 +416,17 @@ body {
 }
 .rule-menu-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(124,110,250,0.07); }
 
-/* Pasta selecionada — funciona para pastas fixas E do Outlook */
+.ctx-menu-section {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase;
+  color: var(--text3); padding: 6px 14px 2px; pointer-events: none;
+}
+.ctx-menu-divider { height: 1px; background: var(--border); margin: 4px 0; }
+.ctx-disabled { opacity: 0.35; pointer-events: none; cursor: default; }
+
+/* Pasta fixa com hover no botão menu */
+.folder-item-fixed { padding-right: 36px; }
+.folder-item-fixed .folder-menu-btn { opacity: 0; }
+.folder-item-fixed:hover .folder-menu-btn { opacity: 1; }
 .folder-item.active-folder,
 .folder-item-outlook.active-folder {
   background: rgba(124,110,250,0.12);

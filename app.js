@@ -73,8 +73,9 @@ const state = {
   selectedEmail:null, currentFilter:'all', currentFolder:null,
   currentView:'emails', rules:[], config:{}, chatHistory:[],
   page: { current:1, nextLink:null, prevLinks:[], total:null, pageSize:50 },
-  outlookFolders: [],      // pastas reais do Outlook
-  useOutlookFolders: false, // toggle da configuração
+  outlookFolders: [],
+  useOutlookFolders: false,
+  fixedFolders: null,
 };
 
 const DEMO_EMAILS = [
@@ -297,19 +298,24 @@ function renderSidebarFolders() {
       </div>`).join('') +
       `<div class="folder-new-btn" onclick="openNewFolderModal()">+ Nova pasta</div>`;
   } else {
-    // Pastas fixas do MailMind
-    const fixed = [
-      { name:'Trabalho',   color:'#7C6EFA' },
-      { name:'Financeiro', color:'#5DCAA5' },
-      { name:'Marketing',  color:'#EF9F27' },
-      { name:'Pessoal',    color:'#F0997B' },
-      { name:'Outros',     color:'#888780' },
-    ];
-    list.innerHTML = fixed.map(f => `
-      <div class="folder-item" onclick="filterByFolder('${f.name}')">
+    // Pastas fixas do MailMind — carrega do localStorage ou usa padrão
+    if (!state.fixedFolders) {
+      state.fixedFolders = JSON.parse(localStorage.getItem('mm_fixed_folders') || 'null') || [
+        { name:'Trabalho',   color:'#7C6EFA' },
+        { name:'Financeiro', color:'#5DCAA5' },
+        { name:'Marketing',  color:'#EF9F27' },
+        { name:'Pessoal',    color:'#F0997B' },
+        { name:'Outros',     color:'#888780' },
+      ];
+    }
+    list.innerHTML = state.fixedFolders.map(f => `
+      <div class="folder-item folder-item-fixed" onclick="filterByFolder('${escHtml(f.name)}')" data-foldername="${escHtml(f.name)}">
         <div class="folder-dot" style="background:${f.color}"></div>
-        ${escHtml(f.name)} <span class="folder-count" id="cnt-${f.name}">0</span>
-      </div>`).join('');
+        <span class="folder-name">${escHtml(f.name)}</span>
+        <span class="folder-count" id="cnt-${escHtml(f.name)}">0</span>
+        <button class="folder-menu-btn" onclick="event.stopPropagation();openFixedFolderMenu(event,'${escHtml(f.name)}')" title="Opções">···</button>
+      </div>`).join('') +
+      `<div class="folder-new-btn" onclick="addFixedFolder()">+ Nova pasta</div>`;
     updateFolderCounts();
   }
 }
@@ -347,7 +353,63 @@ async function fetchEmailsByFolder(folderId, folderName) {
   } catch(e) { hideStatus(); showNotif('error','❌','Erro: '+e.message); }
 }
 
-// ── CRUD de pastas ────────────────────────────────────────────
+function saveFixedFolders() {
+  localStorage.setItem('mm_fixed_folders', JSON.stringify(state.fixedFolders));
+}
+
+function openFixedFolderMenu(event, name) {
+  document.getElementById('folderCtxMenu')?.remove();
+  const menu = document.createElement('div');
+  menu.id = 'folderCtxMenu';
+  menu.className = 'folder-ctx-menu';
+  menu.innerHTML = `
+    <div class="ctx-item" onclick="renameFixedFolder('${escHtml(name)}')">✏️ Renomear</div>
+    <div class="ctx-item ctx-danger" onclick="deleteFixedFolder('${escHtml(name)}')">🗑 Excluir</div>`;
+  const rect = event.currentTarget.getBoundingClientRect();
+  menu.style.top  = (rect.bottom + 4) + 'px';
+  menu.style.left = (rect.right - 160) + 'px';
+  document.body.appendChild(menu);
+  setTimeout(() => { document.addEventListener('click', () => menu.remove(), { once: true }); }, 50);
+}
+
+function addFixedFolder() {
+  const name = prompt('Nome da nova pasta:');
+  if (!name?.trim()) return;
+  const n = name.trim();
+  if (state.fixedFolders.find(f => f.name === n)) { showNotif('error','❌','Já existe uma pasta com esse nome'); return; }
+  const colors = ['#7C6EFA','#5DCAA5','#EF9F27','#F0997B','#E24B4A','#4AACE2','#B26EFA'];
+  state.fixedFolders.push({ name: n, color: colors[state.fixedFolders.length % colors.length] });
+  saveFixedFolders();
+  renderSidebarFolders();
+  showNotif('success','✅',`Pasta "${n}" criada!`);
+}
+
+function renameFixedFolder(oldName) {
+  const newName = prompt('Novo nome:', oldName);
+  if (!newName?.trim() || newName.trim() === oldName) return;
+  const n = newName.trim();
+  const f = state.fixedFolders.find(f => f.name === oldName);
+  if (!f) return;
+  // Atualiza e-mails com a pasta antiga
+  state.emails.forEach(e => { if (e.folder === oldName) e.folder = n; });
+  f.name = n;
+  saveFixedFolders();
+  renderSidebarFolders();
+  renderEmailList();
+  showNotif('success','✅',`Pasta renomeada para "${n}"!`);
+}
+
+function deleteFixedFolder(name) {
+  if (!confirm(`Excluir a pasta "${name}"? Os e-mails serão movidos para "Outros".`)) return;
+  state.fixedFolders = state.fixedFolders.filter(f => f.name !== name);
+  // Move e-mails para Outros
+  state.emails.forEach(e => { if (e.folder === name) { e.folder = 'Outros'; e.tag = ''; } });
+  saveFixedFolders();
+  renderSidebarFolders();
+  renderEmailList();
+  updateFolderCounts();
+  showNotif('success','✅',`Pasta "${name}" excluída!`);
+}
 function openFolderMenu(folderId, folderName, btn) {
   // Remove menu existente
   document.getElementById('folderCtxMenu')?.remove();
@@ -1110,17 +1172,28 @@ function openRuleMenu(event, id) {
   menu.id = 'ruleCtxMenu';
   menu.className = 'folder-ctx-menu';
   menu.innerHTML = `
-    <div class="ctx-item" onclick="openEditRule('${id}')">✏️ Editar</div>
-    <div class="ctx-item ctx-danger" onclick="deleteRule('${id}')">🗑 Excluir</div>`;
+    <div class="ctx-menu-section">Regra</div>
+    <div class="ctx-item" onclick="openEditRule('${id}')">✏️ Editar regra</div>
+    <div class="ctx-item ctx-danger" onclick="deleteRule('${id}')">🗑 Excluir regra</div>
+    <div class="ctx-menu-divider"></div>
+    <div class="ctx-menu-section">E-mail selecionado</div>
+    <div class="ctx-item ${!state.selectedEmail?'ctx-disabled':''}" onclick="${state.selectedEmail?`openComposer('reply')`:''}">↩ Responder</div>
+    <div class="ctx-item ${!state.selectedEmail?'ctx-disabled':''}" onclick="${state.selectedEmail?`openComposer('forward')`:''}">→ Encaminhar</div>
+    <div class="ctx-item ctx-danger ${!state.selectedEmail?'ctx-disabled':''}" onclick="${state.selectedEmail?'deleteSelected()':''}">🗑 Excluir e-mail</div>`;
 
   const btn = event.currentTarget;
   const rect = btn.getBoundingClientRect();
   menu.style.top  = (rect.bottom + 4) + 'px';
-  menu.style.left = (rect.right - 150) + 'px';
+  menu.style.left = (rect.right - 200) + 'px';
   document.body.appendChild(menu);
 
+  // Ajusta se sair da tela
+  const mr = menu.getBoundingClientRect();
+  if (mr.right  > window.innerWidth)  menu.style.left = (window.innerWidth - mr.width - 8) + 'px';
+  if (mr.bottom > window.innerHeight) menu.style.top  = (rect.top - mr.height - 4) + 'px';
+
   setTimeout(() => {
-    document.addEventListener('click', () => menu.remove(), { once: true });
+    document.addEventListener('click', () => { menu.remove(); switchView('emails', null); }, { once: true });
   }, 50);
 }
 
@@ -1227,7 +1300,15 @@ function applyFilters(){
   if(search)emails=emails.filter(e=>e.subject.toLowerCase().includes(search)||e.from.toLowerCase().includes(search)||e.preview.toLowerCase().includes(search));
   state.filteredEmails=emails;renderEmailList();
 }
-function updateFolderCounts(){['Trabalho','Financeiro','Marketing','Pessoal','Outros'].forEach(f=>{const el=document.getElementById('cnt-'+f);if(el)el.textContent=state.emails.filter(e=>e.folder===f).length;});}
+function updateFolderCounts(){
+  const folders = state.fixedFolders || [
+    {name:'Trabalho'},{name:'Financeiro'},{name:'Marketing'},{name:'Pessoal'},{name:'Outros'}
+  ];
+  folders.forEach(f=>{
+    const el=document.getElementById('cnt-'+f.name);
+    if(el) el.textContent=state.emails.filter(e=>e.folder===f.name).length||'';
+  });
+}
 function updateUnreadBadge(){
   const count = state.emails.filter(e=>e.unread).length;
   document.getElementById('unreadBadge').textContent = count;
