@@ -1085,21 +1085,43 @@ function renderRules() {
 
   list.innerHTML=state.rules.map(r=>`
     <div class="rule-card ${r.active?'active-rule':''}">
-      <div class="rule-icon" style="background:${r.color||'var(--surface)'}">${r.icon||'📋'}</div>
       <div class="rule-info">
         <div class="rule-name">${escHtml(r.name)}</div>
         <div class="rule-desc">Mover para: <strong>${escHtml(r.folder)}</strong> — ${escHtml(r.criteria.substring(0,60))}${r.criteria.length>60?'...':''}</div>
         <div class="rule-actions">
           <span class="rule-tag" style="background:${pColor[r.priority]};color:${pText[r.priority]}">${pLabel[r.priority]||'Média'} prioridade</span>
-          <button class="rule-action-btn" onclick="openEditRule('${r.id}')">✏️ Editar</button>
-          <button class="rule-action-btn rule-action-danger" onclick="deleteRule('${r.id}')">🗑 Excluir</button>
         </div>
       </div>
-      <label class="rule-toggle">
-        <input type="checkbox" ${r.active?'checked':''} onchange="toggleRule('${r.id}',this.checked)"/>
-        <span class="toggle-slider"></span>
-      </label>
+      <div class="rule-right">
+        <button class="rule-menu-btn" onclick="openRuleMenu(event,'${r.id}')" title="Opções">···</button>
+        <label class="rule-toggle">
+          <input type="checkbox" ${r.active?'checked':''} onchange="toggleRule('${r.id}',this.checked)"/>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
     </div>`).join('');
+}
+
+function openRuleMenu(event, id) {
+  event.stopPropagation();
+  document.getElementById('ruleCtxMenu')?.remove();
+
+  const menu = document.createElement('div');
+  menu.id = 'ruleCtxMenu';
+  menu.className = 'folder-ctx-menu';
+  menu.innerHTML = `
+    <div class="ctx-item" onclick="openEditRule('${id}')">✏️ Editar</div>
+    <div class="ctx-item ctx-danger" onclick="deleteRule('${id}')">🗑 Excluir</div>`;
+
+  const btn = event.currentTarget;
+  const rect = btn.getBoundingClientRect();
+  menu.style.top  = (rect.bottom + 4) + 'px';
+  menu.style.left = (rect.right - 150) + 'px';
+  document.body.appendChild(menu);
+
+  setTimeout(() => {
+    document.addEventListener('click', () => menu.remove(), { once: true });
+  }, 50);
 }
 
 function openEditRule(id) {
@@ -1173,16 +1195,27 @@ function saveRule(){
 // FILTERS
 // ============================================================
 function setFilter(filter,btn){
-  state.currentFilter=filter;state.currentFolder=null;
+  state.currentFilter=filter; state.currentFolder=null;
   document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
-  if(btn)btn.classList.add('active');
+  if(btn) btn.classList.add('active');
   document.getElementById('panelTitle').textContent='Caixa de Entrada';
+
+  // Remove highlight de pastas
+  document.querySelectorAll('.folder-item').forEach(el=>el.classList.remove('active-folder'));
+
   applyFilters();
 }
-function filterByFolder(folder){
-  state.currentFolder=folder;state.currentFilter='all';
+function filterByFolder(folder) {
+  state.currentFolder=folder; state.currentFilter='all';
   document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
-  document.getElementById('panelTitle').textContent=folder;applyFilters();
+  document.getElementById('panelTitle').textContent=folder;
+
+  // Highlight da pasta selecionada
+  document.querySelectorAll('.folder-item').forEach(el => {
+    el.classList.toggle('active-folder', el.textContent.trim().startsWith(folder));
+  });
+
+  applyFilters();
 }
 function filterEmails(){applyFilters();}
 function applyFilters(){
