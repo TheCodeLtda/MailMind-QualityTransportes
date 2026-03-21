@@ -725,18 +725,44 @@ async function claudeApi(messages,maxTokens=1000,system=null) {
 async function classifyAllEmails() {
   const cfg=loadConfig();
   if(!cfg.claudeApiKey){showNotif('error','❌','Configure a chave da API do Claude');return;}
+
   const toProcess=state.emails.slice(0,cfg.batchSize||20);
   const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
+
+  // Barra de progresso no botão
+  const btn = document.querySelector('.classify-btn');
+  const originalText = btn?.textContent;
+  let cancelled = false;
+
   for(let i=0;i<toProcess.length;i++){
+    if (cancelled) break;
     const email=toProcess[i];
-    showStatus(`Classificando ${i+1}/${toProcess.length}...`);
+    if (btn) btn.textContent = `Classificando ${i+1}/${toProcess.length}...`;
+    showStatus(`Classificando e-mail ${i+1}/${toProcess.length}...`);
     const folder=await classifyEmail(email);
     email.folder=folder; email.tag=tagMap[folder]||'';
     if(state.connected&&state.accessToken) await moveEmail(email.id,folder);
+    renderEmailList();
   }
+
   state.filteredEmails=[...state.emails];
   renderEmailList(); updateFolderCounts(); hideStatus();
+  if (btn) btn.textContent = originalText;
   showNotif('success','✅',`${toProcess.length} e-mails classificados!`);
+}
+
+// Classifica um único e-mail selecionado
+async function classifySelected() {
+  const email = state.selectedEmail; if (!email) return;
+  const cfg = loadConfig();
+  if (!cfg.claudeApiKey) { showNotif('error','❌','Configure a chave da API do Claude'); return; }
+  showStatus('Classificando e-mail...');
+  const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
+  const folder = await classifyEmail(email);
+  email.folder = folder; email.tag = tagMap[folder]||'';
+  if (state.connected && state.accessToken) await moveEmail(email.id, folder);
+  renderEmailList(); updateFolderCounts(); hideStatus();
+  showNotif('success','✅',`E-mail classificado como: ${folder}`);
 }
 async function classifyEmail(email) {
   const cfg=loadConfig();
@@ -775,7 +801,8 @@ function renderEmailList() {
   list.innerHTML=emails.map(e=>{
     const initials=getInitials(e.fromName||e.from), color=getAvatarColor(e.from), relDate=formatRelativeDate(e.date), selected=state.selectedEmail?.id===e.id;
     return `<div class="email-item ${e.unread?'unread':''} ${selected?'selected':''}"
-      onclick="selectEmail('${e.id}')">
+      onclick="selectEmail('${e.id}')"
+      oncontextmenu="openEmailContextMenu(event,'${e.id}')">
       <div class="email-item-inner">
         <div class="email-avatar-col">
           <div class="list-avatar" style="background:${color}">${initials}</div>
@@ -852,6 +879,7 @@ async function renderEmailDetail(email) {
       </div>
       <div class="detail-actions">
         <button class="action-btn primary" onclick="summarizeSelected()">✨ Resumir com IA</button>
+        <button class="action-btn" onclick="classifySelected()">⚡ Classificar</button>
         <button class="action-btn" onclick="openComposer('reply')">↩ Responder</button>
         <button class="action-btn" onclick="openComposer('replyAll')">↩↩ Resp. todos</button>
         <button class="action-btn" onclick="openComposer('forward')">→ Encaminhar</button>
@@ -1006,30 +1034,130 @@ function handleChatKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();se
 function useSuggestion(btn){document.getElementById('chatInput').value=btn.textContent;switchTab('chat',document.querySelectorAll('.tab')[1]);sendChat();}
 function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,140)+'px';}
 
+function openEmailContextMenu(event, id) {
+  event.preventDefault();
+  document.getElementById('emailCtxMenu')?.remove();
+
+  const email = state.emails.find(e => e.id === id);
+  if (!email) return;
+
+  // Seleciona o email
+  selectEmail(id);
+
+  const menu = document.createElement('div');
+  menu.id = 'emailCtxMenu';
+  menu.className = 'folder-ctx-menu';
+  menu.style.top  = event.clientY + 'px';
+  menu.style.left = event.clientX + 'px';
+  menu.innerHTML = `
+    <div class="ctx-item" onclick="classifySelected()">⚡ Classificar com IA</div>
+    <div class="ctx-item" onclick="summarizeSelected()">✨ Resumir com IA</div>
+    <div class="ctx-item" onclick="openComposer('reply')">↩ Responder</div>
+    <div class="ctx-item" onclick="openComposer('replyAll')">↩↩ Responder a todos</div>
+    <div class="ctx-item" onclick="openComposer('forward')">→ Encaminhar</div>
+    <div class="ctx-item ctx-danger" onclick="deleteSelected()">🗑 Mover para lixeira</div>`;
+  document.body.appendChild(menu);
+
+  // Ajusta posição se sair da tela
+  const rect = menu.getBoundingClientRect();
+  if (rect.right  > window.innerWidth)  menu.style.left = (event.clientX - rect.width)  + 'px';
+  if (rect.bottom > window.innerHeight) menu.style.top  = (event.clientY - rect.height) + 'px';
+
+  setTimeout(() => {
+    document.addEventListener('click', () => menu.remove(), { once: true });
+    document.addEventListener('contextmenu', () => menu.remove(), { once: true });
+  }, 50);
+}
+
 // ============================================================
 // RULES
 // ============================================================
 function renderRules() {
   const list=document.getElementById('rulesList');
-  const pLabel={high:'Alta',medium:'Média',low:'Baixa'}, pColor={high:'rgba(226,75,74,0.15)',medium:'rgba(239,159,39,0.15)',low:'rgba(29,158,117,0.15)'}, pText={high:'var(--danger)',medium:'var(--warn)',low:'var(--success)'};
+  const pLabel={high:'Alta',medium:'Média',low:'Baixa'};
+  const pColor={high:'rgba(226,75,74,0.15)',medium:'rgba(239,159,39,0.15)',low:'rgba(29,158,117,0.15)'};
+  const pText={high:'var(--danger)',medium:'var(--warn)',low:'var(--success)'};
+
+  if (!state.rules.length) {
+    list.innerHTML='<div style="padding:24px;text-align:center;color:var(--text3);font-size:13px;">Nenhuma regra criada ainda.</div>';
+    return;
+  }
+
   list.innerHTML=state.rules.map(r=>`
     <div class="rule-card ${r.active?'active-rule':''}">
       <div class="rule-icon" style="background:${r.color||'var(--surface)'}">${r.icon||'📋'}</div>
       <div class="rule-info">
         <div class="rule-name">${escHtml(r.name)}</div>
-        <div class="rule-desc">Mover para: <strong>${r.folder}</strong> — ${escHtml(r.criteria.substring(0,60))}${r.criteria.length>60?'...':''}</div>
+        <div class="rule-desc">Mover para: <strong>${escHtml(r.folder)}</strong> — ${escHtml(r.criteria.substring(0,60))}${r.criteria.length>60?'...':''}</div>
         <div class="rule-actions">
           <span class="rule-tag" style="background:${pColor[r.priority]};color:${pText[r.priority]}">${pLabel[r.priority]||'Média'} prioridade</span>
-          <button onclick="deleteRule('${r.id}')" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;padding:0 4px;">Excluir</button>
+          <button class="rule-action-btn" onclick="openEditRule('${r.id}')">✏️ Editar</button>
+          <button class="rule-action-btn rule-action-danger" onclick="deleteRule('${r.id}')">🗑 Excluir</button>
         </div>
       </div>
-      <label class="rule-toggle"><input type="checkbox" ${r.active?'checked':''} onchange="toggleRule('${r.id}',this.checked)"/><span class="toggle-slider"></span></label>
+      <label class="rule-toggle">
+        <input type="checkbox" ${r.active?'checked':''} onchange="toggleRule('${r.id}',this.checked)"/>
+        <span class="toggle-slider"></span>
+      </label>
     </div>`).join('');
 }
+
+function openEditRule(id) {
+  const r = state.rules.find(r => r.id === id);
+  if (!r) return;
+
+  // Reutiliza o modal, mas em modo edição
+  document.getElementById('ruleName').value     = r.name;
+  document.getElementById('ruleCriteria').value = r.criteria;
+  document.getElementById('rulePriority').value = r.priority;
+
+  // Atualiza o select de pasta
+  const sel = document.getElementById('ruleFolder');
+  for (const opt of sel.options) { if (opt.value === r.folder || opt.text === r.folder) { sel.value = opt.value; break; } }
+
+  // Troca título e botão para modo edição
+  document.querySelector('#ruleModal .modal-title').textContent = 'Editar Regra';
+  const btn = document.querySelector('#ruleModal .btn-save');
+  btn.textContent = 'Salvar Alterações';
+  btn.onclick = () => updateRule(id);
+
+  document.getElementById('ruleModal').classList.add('open');
+}
+
+function updateRule(id) {
+  const r = state.rules.find(r => r.id === id);
+  if (!r) return;
+  const name     = document.getElementById('ruleName').value.trim();
+  const criteria = document.getElementById('ruleCriteria').value.trim();
+  const folder   = document.getElementById('ruleFolder').value;
+  const priority = document.getElementById('rulePriority').value;
+  if (!name || !criteria) { showNotif('error','❌','Preencha nome e critério'); return; }
+
+  const icons  = {Financeiro:'💰',Trabalho:'💼',Marketing:'📢',Pessoal:'👤',Outros:'📋'};
+  const colors = {Financeiro:'rgba(29,158,117,0.15)',Trabalho:'rgba(124,110,250,0.15)',Marketing:'rgba(239,159,39,0.15)',Pessoal:'rgba(240,153,123,0.15)',Outros:'rgba(136,135,128,0.15)'};
+  Object.assign(r, { name, criteria, folder, priority, icon: icons[folder]||'📋', color: colors[folder]||'' });
+  saveRules(); renderRules(); closeModal();
+  showNotif('success','✅','Regra atualizada!');
+}
+
 function toggleRule(id,active){const r=state.rules.find(r=>r.id===id);if(r){r.active=active;saveRules();}}
-function deleteRule(id){state.rules=state.rules.filter(r=>r.id!==id);saveRules();renderRules();}
+function deleteRule(id){
+  if(!confirm('Excluir esta regra?')) return;
+  state.rules=state.rules.filter(r=>r.id!==id);saveRules();renderRules();
+  showNotif('success','✅','Regra excluída!');
+}
 function saveRules(){localStorage.setItem('mailmind_rules',JSON.stringify(state.rules));}
-function openAddRule(){document.getElementById('ruleModal').classList.add('open');}
+function openAddRule(){
+  // Reset para modo criação
+  document.getElementById('ruleName').value='';
+  document.getElementById('ruleCriteria').value='';
+  document.getElementById('rulePriority').value='medium';
+  document.querySelector('#ruleModal .modal-title').textContent='Nova Regra de Classificação';
+  const btn=document.querySelector('#ruleModal .btn-save');
+  btn.textContent='Salvar Regra';
+  btn.onclick=saveRule;
+  document.getElementById('ruleModal').classList.add('open');
+}
 function closeModal(){document.getElementById('ruleModal').classList.remove('open');}
 function saveRule(){
   const name=document.getElementById('ruleName').value.trim(), criteria=document.getElementById('ruleCriteria').value.trim(), folder=document.getElementById('ruleFolder').value, priority=document.getElementById('rulePriority').value;
@@ -1038,7 +1166,6 @@ function saveRule(){
   const colors={Financeiro:'rgba(29,158,117,0.15)',Trabalho:'rgba(124,110,250,0.15)',Marketing:'rgba(239,159,39,0.15)',Pessoal:'rgba(240,153,123,0.15)',Outros:'rgba(136,135,128,0.15)'};
   state.rules.push({id:'r'+Date.now(),name,criteria,folder,priority,active:true,icon:icons[folder]||'📋',color:colors[folder]||''});
   saveRules();renderRules();closeModal();
-  document.getElementById('ruleName').value='';document.getElementById('ruleCriteria').value='';
   showNotif('success','✅','Regra adicionada!');
 }
 
