@@ -722,17 +722,29 @@ input:checked + .toggle-slider:before { transform: translateX(16px); }
 .folder-item-fixed,
 .folder-item-outlook { }
 
+.folder-item.active-folder,
 .folder-item-outlook.active-folder { background: rgba(124,110,250,0.12); color: var(--accent); }
 
 .folder-menu-btn {
   flex-shrink: 0;
-  background: none; border: none; color: var(--text3); font-size: 14px;
-  cursor: pointer; padding: 2px 5px; border-radius: 4px; line-height: 1.2;
-  visibility: hidden; letter-spacing: 1.5px; font-weight: 700;
-  transition: background 0.15s;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text3);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+  padding: 1px 6px;
+  line-height: 1.4;
+  transition: all 0.15s;
+  font-family: var(--font-body);
 }
-.folder-item:hover .folder-menu-btn { visibility: visible; }
-.folder-menu-btn:hover { background: var(--border2); color: var(--text); visibility: visible; }
+.folder-menu-btn:hover {
+  background: var(--surface2);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 
 .folder-new-btn {
   font-size: 12px; color: var(--accent); padding: 8px 12px;
