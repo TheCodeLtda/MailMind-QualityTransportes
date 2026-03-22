@@ -709,12 +709,12 @@ async function submitShareFolder() {
   else showNotif('error','❌',`${ok} enviado(s), ${fail} com erro.`);
 }
 // ============================================================
-async function sendReply(emailId, bodyHtml, toAll) {
+async function sendReply(emailId, comment, toAll) {
   const endpoint = toAll ? 'replyAll' : 'reply';
   await fetch(`https://graph.microsoft.com/v1.0/me/messages/${emailId}/${endpoint}`, {
     method:'POST',
     headers:{Authorization:`Bearer ${state.accessToken}`,'Content-Type':'application/json'},
-    body:JSON.stringify({message:{body:{contentType:'html',content:bodyHtml}}}),
+    body:JSON.stringify({ comment }),
   });
 }
 async function sendForward(emailId, toAddress, bodyHtml) {
@@ -740,14 +740,6 @@ function openComposer(mode) {
   const toVal      = mode==='forward' ? '' : email.from;
   const subjectVal = (mode==='forward'?'Enc: ':'Re: ') + email.subject;
 
-  // Texto limpo da citação — remove HTML, &nbsp; e espaços excessivos
-  const cleanText = (email.bodyText || stripHtml(email.bodyHtml||'') || '')
-    .replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&').replace(/&lt;/gi,'<')
-    .replace(/&gt;/gi,'>').replace(/&quot;/gi,'"').replace(/&#\d+;/gi,' ')
-    .replace(/ {3,}/g,' ').replace(/\t/g,' ').replace(/\n{4,}/g,'\n\n').trim()
-    .substring(0, 1500);
-  const quoteBlock = `\n\n--- Mensagem original ---\nDe: ${email.fromName} <${email.from}>\nData: ${email.dateFormatted||''}\nAssunto: ${email.subject}\n\n${cleanText}`;
-
   const panel = document.createElement('div');
   panel.id='composerPanel'; panel.className='composer-panel';
   panel.innerHTML=`
@@ -761,7 +753,7 @@ function openComposer(mode) {
       <div class="composer-field"><label>Assunto</label>
         <input id="composerSubject" type="text" value="${escHtml(subjectVal)}" readonly/></div>
     </div>
-    <textarea class="composer-body" id="composerBody" placeholder="Escreva sua mensagem aqui...">${escHtml(quoteBlock)}</textarea>
+    <textarea class="composer-body" id="composerBody" placeholder="Escreva sua mensagem aqui..."></textarea>
     <div class="composer-footer">
       <button class="action-btn" onclick="document.getElementById('composerPanel').remove()">Cancelar</button>
       <button class="action-btn primary" id="composerSendBtn" onclick="submitComposer('${mode}','${email.id}')">
@@ -769,31 +761,21 @@ function openComposer(mode) {
       </button>
     </div>`;
   document.getElementById('detailTab').appendChild(panel);
-
-  // Foca no início do textarea (antes da citação)
-  const ta = document.getElementById('composerBody');
-  ta.focus();
-  ta.setSelectionRange(0, 0);
-  ta.scrollTop = 0;
+  document.getElementById('composerBody').focus();
 }
 
 async function submitComposer(mode, id) {
   if(!state.accessToken) return;
-  const to      = document.getElementById('composerTo')?.value.trim();
-  const rawText = document.getElementById('composerBody')?.value||'';
+  const to   = document.getElementById('composerTo')?.value.trim();
+  const text = document.getElementById('composerBody')?.value.trim()||'';
   if(mode==='forward'&&!to){showNotif('error','❌','Informe o destinatário');return;}
-
-  // Separa mensagem do usuário da citação original
-  const parts    = rawText.split('\n\n--- Mensagem original ---');
-  const userText = parts[0].trim();
-  const quote    = parts[1] ? `<br><br><hr style="border:none;border-top:1px solid #ccc"><pre style="font-size:13px;color:#666;white-space:pre-wrap">${escHtml(parts[1])}</pre>` : '';
-  const bodyHtml = `<div style="font-family:Arial,sans-serif;font-size:14px">${escHtml(userText).replace(/\n/g,'<br>')}${quote}</div>`;
+  if(!text){showNotif('error','❌','Escreva uma mensagem');return;}
 
   const btn=document.getElementById('composerSendBtn');
   if(btn){btn.textContent='Enviando...';btn.disabled=true;}
   try {
-    if(mode==='forward') await sendForward(id,to,bodyHtml);
-    else await sendReply(id,bodyHtml,mode==='replyAll');
+    if(mode==='forward') await sendForward(id, to, text);
+    else await sendReply(id, text, mode==='replyAll');
     document.getElementById('composerPanel')?.remove();
     showNotif('success','✅','Mensagem enviada!');
   } catch(e){
