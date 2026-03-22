@@ -71,10 +71,11 @@ body {
 .folder-item {
   display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px;
   cursor: pointer; font-size: 13px; color: var(--text2); transition: all 0.15s;
+  position: relative; overflow: visible;
 }
 .folder-item:hover { background: var(--surface2); color: var(--text); }
 .folder-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.folder-count { margin-left: auto; font-size: 11px; color: var(--text3); }
+.folder-count { margin-left: auto; font-size: 11px; color: var(--text3); padding-right: 20px; }
 
 .sidebar-bottom { margin-top: auto; padding: 16px 12px; }
 .connect-btn {
@@ -438,18 +439,13 @@ body {
 .ctx-menu-divider { height: 1px; background: var(--border); margin: 4px 0; }
 .ctx-disabled { opacity: 0.35; pointer-events: none; cursor: default; }
 
-/* Pasta fixa com hover no botão menu */
-.folder-item-fixed { padding-right: 36px; }
-.folder-item-fixed .folder-menu-btn { opacity: 0; }
-.folder-item-fixed:hover .folder-menu-btn { opacity: 1; }
-.folder-item.active-folder,
-.folder-item-outlook.active-folder {
+/* Pasta selecionada */
+.folder-item.active-folder {
   background: rgba(124,110,250,0.12);
   color: var(--accent);
   border-radius: 8px;
 }
-.folder-item.active-folder .folder-dot,
-.folder-item-outlook.active-folder .folder-dot { box-shadow: 0 0 0 2px rgba(124,110,250,0.4); }
+.folder-item.active-folder .folder-dot { box-shadow: 0 0 0 2px rgba(124,110,250,0.4); }
 
 .rule-toggle { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
 .rule-toggle input { opacity: 0; width: 0; height: 0; }
@@ -723,19 +719,21 @@ input:checked + .toggle-slider:before { transform: translateX(16px); }
 .page-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .page-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-.folder-item { position: relative; }
-.folder-item-outlook { padding-right: 36px; }
+.folder-item-fixed,
+.folder-item-outlook { padding-right: 8px; }
+
 .folder-item-outlook.active-folder { background: rgba(124,110,250,0.12); color: var(--accent); }
 .folder-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .folder-menu-btn {
-  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-  background: none; border: none; color: var(--text3); font-size: 14px;
-  cursor: pointer; padding: 2px 4px; border-radius: 4px; line-height: 1;
-  opacity: 0; transition: opacity 0.15s;
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: var(--text3); font-size: 15px;
+  cursor: pointer; padding: 2px 6px; border-radius: 4px; line-height: 1;
+  opacity: 0; transition: opacity 0.15s; letter-spacing: 1px;
+  flex-shrink: 0;
 }
-.folder-item-outlook:hover .folder-menu-btn { opacity: 1; }
-.folder-menu-btn:hover { background: var(--surface2); color: var(--text); }
+.folder-item:hover .folder-menu-btn { opacity: 1; }
+.folder-menu-btn:hover { background: var(--surface2); color: var(--text); opacity: 1 !important; }
 
 .folder-new-btn {
   font-size: 12px; color: var(--accent); padding: 8px 12px;
