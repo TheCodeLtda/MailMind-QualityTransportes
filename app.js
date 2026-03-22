@@ -1357,12 +1357,7 @@ function openRuleMenu(event, id) {
   menu.innerHTML = `
     <div class="ctx-menu-section">Regra</div>
     <div class="ctx-item" onclick="openEditRule('${id}')">✏️ Editar regra</div>
-    <div class="ctx-item ctx-danger" onclick="deleteRule('${id}')">🗑 Excluir regra</div>
-    <div class="ctx-menu-divider"></div>
-    <div class="ctx-menu-section">E-mail selecionado</div>
-    <div class="ctx-item ${!state.selectedEmail?'ctx-disabled':''}" onclick="${state.selectedEmail?`openComposer('reply')`:''}">↩ Responder</div>
-    <div class="ctx-item ${!state.selectedEmail?'ctx-disabled':''}" onclick="${state.selectedEmail?`openComposer('forward')`:''}">→ Encaminhar</div>
-    <div class="ctx-item ctx-danger ${!state.selectedEmail?'ctx-disabled':''}" onclick="${state.selectedEmail?'deleteSelected()':''}">🗑 Excluir e-mail</div>`;
+    <div class="ctx-item ctx-danger" onclick="deleteRule('${id}')">🗑 Excluir regra</div>`;
 
   const btn = event.currentTarget;
   const rect = btn.getBoundingClientRect();
