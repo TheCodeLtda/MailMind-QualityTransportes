@@ -385,6 +385,10 @@ function renderSidebarFolders() {
 
 async function fetchEmailsByFolder(folderId, folderName) {
   if (!state.accessToken) return;
+
+  // Garante que estamos na view de emails
+  if (state.currentView !== 'emails') switchView('emails', null);
+
   document.getElementById('panelTitle').textContent = folderName;
   state.currentFolder  = folderName;
   state.page.current   = 1;
@@ -552,14 +556,17 @@ async function confirmDeleteFolder(folderId, folderName) {
   } catch(e) { showNotif('error','❌','Erro ao excluir pasta: '+e.message); }
 }
 
-// Também atualiza o select de "Mover para..." com pastas do Outlook
 function buildFolderOptions() {
   if (state.useOutlookFolders && state.outlookFolders.length) {
     return state.outlookFolders
       .map(f => `<option value="${f.id}" data-name="${escHtml(f.displayName)}">${escHtml(f.displayName)}</option>`)
       .join('');
   }
-  return `<option>Trabalho</option><option>Financeiro</option><option>Marketing</option><option>Pessoal</option><option>Outros</option>`;
+  // Usa pastas fixas dinâmicas (inclui pastas criadas pelo usuário)
+  const folders = state.fixedFolders || [
+    {name:'Trabalho'},{name:'Financeiro'},{name:'Marketing'},{name:'Pessoal'},{name:'Outros'}
+  ];
+  return folders.map(f => `<option value="${escHtml(f.name)}">${escHtml(f.name)}</option>`).join('');
 }
 
 async function moveSelectedToFolder(val) {
@@ -1384,8 +1391,7 @@ function openEditRule(id) {
   document.getElementById('ruleAction').value   = r.action || 'none';
   document.getElementById('ruleActionTarget').value = r.actionTarget || '';
   toggleRuleActionTarget(r.action || 'none');
-  const sel = document.getElementById('ruleFolder');
-  for (const opt of sel.options) { if (opt.value === r.folder || opt.text === r.folder) { sel.value = opt.value; break; } }
+  populateRuleFolderSelect(r.folder);
   document.querySelector('#ruleModal .modal-title').textContent = 'Editar Regra';
   const btn = document.querySelector('#ruleModal .btn-save');
   btn.textContent = 'Salvar Alterações';
@@ -1418,6 +1424,15 @@ function deleteRule(id){
   showNotif('success','✅','Regra excluída!');
 }
 function saveRules(){localStorage.setItem('mailmind_rules',JSON.stringify(state.rules));}
+function populateRuleFolderSelect(selectedFolder) {
+  const sel = document.getElementById('ruleFolder');
+  if (!sel) return;
+  const folders = state.useOutlookFolders && state.outlookFolders.length
+    ? state.outlookFolders.map(f => f.displayName)
+    : (state.fixedFolders || [{name:'Trabalho'},{name:'Financeiro'},{name:'Marketing'},{name:'Pessoal'},{name:'Outros'}]).map(f => f.name);
+  sel.innerHTML = folders.map(n => `<option value="${escHtml(n)}" ${n===selectedFolder?'selected':''}>${escHtml(n)}</option>`).join('');
+}
+
 function openAddRule(){
   document.getElementById('ruleName').value='';
   document.getElementById('ruleCriteria').value='';
@@ -1425,6 +1440,7 @@ function openAddRule(){
   document.getElementById('ruleAction').value='none';
   document.getElementById('ruleActionTarget').value='';
   toggleRuleActionTarget('none');
+  populateRuleFolderSelect('');
   document.querySelector('#ruleModal .modal-title').textContent='Nova Regra de Classificação';
   const btn=document.querySelector('#ruleModal .btn-save');
   btn.textContent='Salvar Regra';
@@ -1463,13 +1479,17 @@ function setFilter(filter,btn){
   applyFilters();
 }
 function filterByFolder(folder) {
+  // Garante que estamos na view de emails
+  if (state.currentView !== 'emails') switchView('emails', null);
+
   state.currentFolder=folder; state.currentFilter='all';
   document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
   document.getElementById('panelTitle').textContent=folder;
 
   // Highlight da pasta selecionada
   document.querySelectorAll('.folder-item').forEach(el => {
-    el.classList.toggle('active-folder', el.textContent.trim().startsWith(folder));
+    const nameEl = el.querySelector('.folder-name');
+    el.classList.toggle('active-folder', nameEl?.textContent.trim() === folder);
   });
 
   applyFilters();
