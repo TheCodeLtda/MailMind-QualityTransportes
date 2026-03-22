@@ -979,12 +979,33 @@ async function moveEmail(emailId,folderName) {
 // ============================================================
 // CLAUDE API
 // ============================================================
-async function claudeApi(messages,maxTokens=1000,system=null) {
-  const cfg=loadConfig();
-  const body={model:cfg.model||'claude-sonnet-4-20250514',max_tokens:maxTokens,messages};
-  if(system) body.system=system;
-  const res=await fetch('/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  return res.json();
+async function claudeApi(messages, maxTokens=1000, system=null) {
+  const cfg = loadConfig();
+  const body = { model: cfg.model||'claude-sonnet-4-20250514', max_tokens: maxTokens, messages };
+  if (system) body.system = system;
+
+  const res = await fetch('/api/claude', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  // Tenta JSON — se falhar, lança erro legível
+  const text = await res.text();
+  try {
+    const data = JSON.parse(text);
+    if (!res.ok) {
+      throw new Error(data?.error?.message || data?.error || `HTTP ${res.status}`);
+    }
+    return data;
+  } catch(e) {
+    if (e.message.includes('HTTP')) throw e;
+    // HTML de erro do Vercel ou outro problema
+    if (res.status === 401 || res.status === 403) throw new Error('Chave da API inválida ou sem permissão');
+    if (res.status === 404) throw new Error('Proxy /api/claude não encontrado — verifique o deploy no Vercel');
+    if (res.status === 500) throw new Error('Erro no servidor — verifique ANTHROPIC_API_KEY nas variáveis do Vercel');
+    throw new Error(`Resposta inesperada do servidor (${res.status})`);
+  }
 }
 
 // ============================================================
