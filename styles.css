@@ -416,7 +416,22 @@ body {
 }
 .rule-menu-btn:hover { border-color: var(--accent); color: var(--accent); background: rgba(124,110,250,0.07); }
 
-.ctx-menu-section {
+.rule-action-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: var(--accent); background: rgba(124,110,250,0.1);
+  border: 1px solid rgba(124,110,250,0.25); border-radius: 6px;
+  padding: 2px 8px; margin-top: 6px;
+}
+
+.form-divider {
+  height: 1px; background: var(--border); margin: 4px 0 16px;
+}
+
+.share-preview { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.share-item { font-size: 12px; color: var(--text2); padding: 4px 0; border-bottom: 1px solid var(--border); }
+.share-more { font-size: 11px; color: var(--text3); padding: 4px 0; }
+.share-empty { font-size: 13px; color: var(--text3); padding: 8px 0; }
+.share-folder-info { margin-top: 4px; }
   font-size: 10px; font-weight: 600; letter-spacing: 0.8px; text-transform: uppercase;
   color: var(--text3); padding: 6px 14px 2px; pointer-events: none;
 }

@@ -363,6 +363,7 @@ function openFixedFolderMenu(event, name) {
   menu.id = 'folderCtxMenu';
   menu.className = 'folder-ctx-menu';
   menu.innerHTML = `
+    <div class="ctx-item" onclick="openShareFolderModal('${escHtml(name)}')">→ Compartilhar pasta</div>
     <div class="ctx-item" onclick="renameFixedFolder('${escHtml(name)}')">✏️ Renomear</div>
     <div class="ctx-item ctx-danger" onclick="deleteFixedFolder('${escHtml(name)}')">🗑 Excluir</div>`;
   const rect = event.currentTarget.getBoundingClientRect();
@@ -418,8 +419,9 @@ function openFolderMenu(folderId, folderName, btn) {
   menu.id = 'folderCtxMenu';
   menu.className = 'folder-ctx-menu';
   menu.innerHTML = `
-    <div class="ctx-item" onclick="openRenameFolderModal('${folderId}','${escHtml(folderName)}')">Renomear</div>
-    <div class="ctx-item ctx-danger" onclick="confirmDeleteFolder('${folderId}','${escHtml(folderName)}')">Excluir pasta</div>`;
+    <div class="ctx-item" onclick="openShareFolderModal('${escHtml(folderName)}')">→ Compartilhar pasta</div>
+    <div class="ctx-item" onclick="openRenameFolderModal('${folderId}','${escHtml(folderName)}')">✏️ Renomear</div>
+    <div class="ctx-item ctx-danger" onclick="confirmDeleteFolder('${folderId}','${escHtml(folderName)}')">🗑 Excluir pasta</div>`;
 
   const rect = btn.getBoundingClientRect();
   menu.style.top  = rect.bottom + 4 + 'px';
@@ -526,8 +528,74 @@ async function moveSelectedToFolder(val) {
 }
 
 
+function toggleRuleActionTarget(val) {
+  const grp = document.getElementById('ruleActionTargetGroup');
+  if (grp) grp.style.display = val === 'forward' ? 'block' : 'none';
+}
+
+// Executa a ação automática configurada na regra após classificar
+async function executeRuleAction(email, rule) {
+  if (!rule.action || rule.action === 'none') return;
+  try {
+    if (rule.action === 'forward' && rule.actionTarget) {
+      await sendForward(email.id, rule.actionTarget, '');
+    } else if (rule.action === 'delete') {
+      await deleteEmail(email.id);
+      state.emails = state.emails.filter(e => e.id !== email.id);
+      state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
+    } else if (rule.action === 'markRead') {
+      await markAsRead(email.id);
+      email.unread = false;
+    }
+  } catch(e) { console.warn('executeRuleAction:', e); }
+}
+
 // ============================================================
-// GRAPH API — REPLY / FORWARD / DELETE
+// COMPARTILHAR PASTA
+// ============================================================
+let _shareFolderTarget = null; // { name, emails[] }
+
+function openShareFolderModal(folderName) {
+  const emails = state.emails.filter(e => e.folder === folderName);
+  _shareFolderTarget = { name: folderName, emails };
+
+  document.getElementById('shareFolderSub').textContent =
+    `Encaminhar ${emails.length} e-mail(s) da pasta "${folderName}" para um destinatário.`;
+  document.getElementById('shareFolderInfo').innerHTML =
+    emails.length === 0
+      ? '<div class="share-empty">Nenhum e-mail nesta pasta no momento.</div>'
+      : `<div class="share-preview">${emails.slice(0,3).map(e=>`<div class="share-item">📧 ${escHtml(e.subject)}</div>`).join('')}${emails.length>3?`<div class="share-more">...e mais ${emails.length-3}</div>`:''}</div>`;
+  document.getElementById('shareFolderEmail').value = '';
+  document.getElementById('shareFolderMessage').value = '';
+  document.getElementById('shareFolderModal').classList.add('open');
+}
+
+async function submitShareFolder() {
+  const to  = document.getElementById('shareFolderEmail').value.trim();
+  const msg = document.getElementById('shareFolderMessage').value.trim();
+  if (!to) { showNotif('error','❌','Informe o destinatário'); return; }
+  if (!state.accessToken) { showNotif('error','❌','Conecte o Outlook primeiro'); return; }
+  if (!_shareFolderTarget?.emails.length) { showNotif('error','❌','Nenhum e-mail para encaminhar'); return; }
+
+  const btn = document.getElementById('shareFolderBtn');
+  btn.textContent = 'Encaminhando...'; btn.disabled = true;
+
+  const emails = _shareFolderTarget.emails;
+  let ok = 0, fail = 0;
+
+  for (const email of emails) {
+    try {
+      await sendForward(email.id, to, msg ? `<p>${escHtml(msg)}</p><hr>` : '');
+      ok++;
+    } catch { fail++; }
+  }
+
+  btn.textContent = 'Encaminhar'; btn.disabled = false;
+  document.getElementById('shareFolderModal').classList.remove('open');
+
+  if (fail === 0) showNotif('success','✅',`${ok} e-mail(s) encaminhado(s) para ${to}!`);
+  else showNotif('error','❌',`${ok} enviados, ${fail} com erro.`);
+}
 // ============================================================
 async function sendReply(emailId, bodyHtml, toAll) {
   const endpoint = toAll ? 'replyAll' : 'reply';
@@ -791,19 +859,21 @@ async function classifyAllEmails() {
   const toProcess=state.emails.slice(0,cfg.batchSize||20);
   const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
 
-  // Barra de progresso no botão
   const btn = document.querySelector('.classify-btn');
   const originalText = btn?.textContent;
-  let cancelled = false;
 
   for(let i=0;i<toProcess.length;i++){
-    if (cancelled) break;
     const email=toProcess[i];
     if (btn) btn.textContent = `Classificando ${i+1}/${toProcess.length}...`;
     showStatus(`Classificando e-mail ${i+1}/${toProcess.length}...`);
     const folder=await classifyEmail(email);
     email.folder=folder; email.tag=tagMap[folder]||'';
-    if(state.connected&&state.accessToken) await moveEmail(email.id,folder);
+    if(state.connected&&state.accessToken){
+      await moveEmail(email.id, folder);
+      // Executa ação automática da regra correspondente
+      const rule = state.rules.find(r => r.active && r.folder === folder && r.action && r.action !== 'none');
+      if (rule) await executeRuleAction(email, rule);
+    }
     renderEmailList();
   }
 
@@ -813,7 +883,6 @@ async function classifyAllEmails() {
   showNotif('success','✅',`${toProcess.length} e-mails classificados!`);
 }
 
-// Classifica um único e-mail selecionado
 async function classifySelected() {
   const email = state.selectedEmail; if (!email) return;
   const cfg = loadConfig();
@@ -822,7 +891,11 @@ async function classifySelected() {
   const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
   const folder = await classifyEmail(email);
   email.folder = folder; email.tag = tagMap[folder]||'';
-  if (state.connected && state.accessToken) await moveEmail(email.id, folder);
+  if (state.connected && state.accessToken) {
+    await moveEmail(email.id, folder);
+    const rule = state.rules.find(r => r.active && r.folder === folder && r.action && r.action !== 'none');
+    if (rule) await executeRuleAction(email, rule);
+  }
   renderEmailList(); updateFolderCounts(); hideStatus();
   showNotif('success','✅',`E-mail classificado como: ${folder}`);
 }
@@ -1150,6 +1223,11 @@ function renderRules() {
       <div class="rule-info">
         <div class="rule-name">${escHtml(r.name)}</div>
         <div class="rule-desc">Mover para: <strong>${escHtml(r.folder)}</strong> — ${escHtml(r.criteria.substring(0,60))}${r.criteria.length>60?'...':''}</div>
+        ${r.action && r.action !== 'none' ? `<div class="rule-action-badge">${
+          r.action==='forward' ? `→ Encaminhar para ${escHtml(r.actionTarget||'')}` :
+          r.action==='delete'  ? '🗑 Mover para lixeira' :
+          r.action==='markRead'? '✓ Marcar como lido' : ''
+        }</div>` : ''}
         <div class="rule-actions">
           <span class="rule-tag" style="background:${pColor[r.priority]};color:${pText[r.priority]}">${pLabel[r.priority]||'Média'} prioridade</span>
         </div>
@@ -1200,22 +1278,18 @@ function openRuleMenu(event, id) {
 function openEditRule(id) {
   const r = state.rules.find(r => r.id === id);
   if (!r) return;
-
-  // Reutiliza o modal, mas em modo edição
   document.getElementById('ruleName').value     = r.name;
   document.getElementById('ruleCriteria').value = r.criteria;
   document.getElementById('rulePriority').value = r.priority;
-
-  // Atualiza o select de pasta
+  document.getElementById('ruleAction').value   = r.action || 'none';
+  document.getElementById('ruleActionTarget').value = r.actionTarget || '';
+  toggleRuleActionTarget(r.action || 'none');
   const sel = document.getElementById('ruleFolder');
   for (const opt of sel.options) { if (opt.value === r.folder || opt.text === r.folder) { sel.value = opt.value; break; } }
-
-  // Troca título e botão para modo edição
   document.querySelector('#ruleModal .modal-title').textContent = 'Editar Regra';
   const btn = document.querySelector('#ruleModal .btn-save');
   btn.textContent = 'Salvar Alterações';
   btn.onclick = () => updateRule(id);
-
   document.getElementById('ruleModal').classList.add('open');
 }
 
@@ -1226,11 +1300,13 @@ function updateRule(id) {
   const criteria = document.getElementById('ruleCriteria').value.trim();
   const folder   = document.getElementById('ruleFolder').value;
   const priority = document.getElementById('rulePriority').value;
+  const action   = document.getElementById('ruleAction').value;
+  const actionTarget = document.getElementById('ruleActionTarget').value.trim();
   if (!name || !criteria) { showNotif('error','❌','Preencha nome e critério'); return; }
-
+  if (action === 'forward' && !actionTarget) { showNotif('error','❌','Informe o e-mail para encaminhar'); return; }
   const icons  = {Financeiro:'💰',Trabalho:'💼',Marketing:'📢',Pessoal:'👤',Outros:'📋'};
   const colors = {Financeiro:'rgba(29,158,117,0.15)',Trabalho:'rgba(124,110,250,0.15)',Marketing:'rgba(239,159,39,0.15)',Pessoal:'rgba(240,153,123,0.15)',Outros:'rgba(136,135,128,0.15)'};
-  Object.assign(r, { name, criteria, folder, priority, icon: icons[folder]||'📋', color: colors[folder]||'' });
+  Object.assign(r, { name, criteria, folder, priority, action, actionTarget, icon: icons[folder]||'📋', color: colors[folder]||'' });
   saveRules(); renderRules(); closeModal();
   showNotif('success','✅','Regra atualizada!');
 }
@@ -1243,10 +1319,12 @@ function deleteRule(id){
 }
 function saveRules(){localStorage.setItem('mailmind_rules',JSON.stringify(state.rules));}
 function openAddRule(){
-  // Reset para modo criação
   document.getElementById('ruleName').value='';
   document.getElementById('ruleCriteria').value='';
   document.getElementById('rulePriority').value='medium';
+  document.getElementById('ruleAction').value='none';
+  document.getElementById('ruleActionTarget').value='';
+  toggleRuleActionTarget('none');
   document.querySelector('#ruleModal .modal-title').textContent='Nova Regra de Classificação';
   const btn=document.querySelector('#ruleModal .btn-save');
   btn.textContent='Salvar Regra';
@@ -1255,11 +1333,17 @@ function openAddRule(){
 }
 function closeModal(){document.getElementById('ruleModal').classList.remove('open');}
 function saveRule(){
-  const name=document.getElementById('ruleName').value.trim(), criteria=document.getElementById('ruleCriteria').value.trim(), folder=document.getElementById('ruleFolder').value, priority=document.getElementById('rulePriority').value;
+  const name=document.getElementById('ruleName').value.trim();
+  const criteria=document.getElementById('ruleCriteria').value.trim();
+  const folder=document.getElementById('ruleFolder').value;
+  const priority=document.getElementById('rulePriority').value;
+  const action=document.getElementById('ruleAction').value;
+  const actionTarget=document.getElementById('ruleActionTarget').value.trim();
   if(!name||!criteria){showNotif('error','❌','Preencha nome e critério');return;}
+  if(action==='forward'&&!actionTarget){showNotif('error','❌','Informe o e-mail para encaminhar');return;}
   const icons={Financeiro:'💰',Trabalho:'💼',Marketing:'📢',Pessoal:'👤',Outros:'📋'};
   const colors={Financeiro:'rgba(29,158,117,0.15)',Trabalho:'rgba(124,110,250,0.15)',Marketing:'rgba(239,159,39,0.15)',Pessoal:'rgba(240,153,123,0.15)',Outros:'rgba(136,135,128,0.15)'};
-  state.rules.push({id:'r'+Date.now(),name,criteria,folder,priority,active:true,icon:icons[folder]||'📋',color:colors[folder]||''});
+  state.rules.push({id:'r'+Date.now(),name,criteria,folder,priority,action,actionTarget,active:true,icon:icons[folder]||'📋',color:colors[folder]||''});
   saveRules();renderRules();closeModal();
   showNotif('success','✅','Regra adicionada!');
 }

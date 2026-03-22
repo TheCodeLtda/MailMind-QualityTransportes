@@ -317,9 +317,9 @@
 
 <!-- MODAL: ADD RULE -->
 <div class="modal-overlay" id="ruleModal">
-  <div class="modal">
+  <div class="modal" style="max-width:520px">
     <div class="modal-title">Nova Regra de Classificação</div>
-    <div class="modal-sub">O Claude usará esta regra para mover e-mails automaticamente.</div>
+    <div class="modal-sub">O Claude usará esta regra para classificar e-mails automaticamente.</div>
 
     <div class="form-group">
       <label class="form-label">Nome da Regra</label>
@@ -347,9 +347,46 @@
         <option value="low">Baixa</option>
       </select>
     </div>
+
+    <div class="form-divider"></div>
+    <div class="form-group">
+      <label class="form-label">Ação automática ao classificar</label>
+      <select class="form-select" id="ruleAction" onchange="toggleRuleActionTarget(this.value)">
+        <option value="none">Nenhuma — apenas mover para a pasta</option>
+        <option value="forward">Encaminhar para um e-mail</option>
+        <option value="delete">Mover para lixeira</option>
+        <option value="markRead">Marcar como lido</option>
+      </select>
+    </div>
+    <div class="form-group" id="ruleActionTargetGroup" style="display:none">
+      <label class="form-label">Encaminhar para</label>
+      <input type="email" class="form-input" id="ruleActionTarget" placeholder="destinatario@email.com"/>
+    </div>
+
     <div class="modal-footer">
       <button class="btn-cancel" onclick="closeModal()">Cancelar</button>
       <button class="btn-save" onclick="saveRule()">Salvar Regra</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: COMPARTILHAR PASTA -->
+<div class="modal-overlay" id="shareFolderModal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-title">Compartilhar Pasta</div>
+    <div class="modal-sub" id="shareFolderSub">Encaminhar todos os e-mails desta pasta para um destinatário.</div>
+    <div class="form-group">
+      <label class="form-label">Encaminhar para</label>
+      <input type="email" class="form-input" id="shareFolderEmail" placeholder="destinatario@email.com"/>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Mensagem de introdução (opcional)</label>
+      <textarea class="form-textarea" id="shareFolderMessage" placeholder="Ex: Segue os e-mails da pasta Financeiro para sua análise."></textarea>
+    </div>
+    <div class="share-folder-info" id="shareFolderInfo"></div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="document.getElementById('shareFolderModal').classList.remove('open')">Cancelar</button>
+      <button class="btn-save" id="shareFolderBtn" onclick="submitShareFolder()">Encaminhar</button>
     </div>
   </div>
 </div>
