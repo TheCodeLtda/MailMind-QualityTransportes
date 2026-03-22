@@ -727,24 +727,18 @@ input:checked + .toggle-slider:before { transform: translateX(16px); }
 
 .folder-menu-btn {
   flex-shrink: 0;
+  margin-left: auto;
   background: none;
-  border: 1px solid var(--border);
-  border-radius: 5px;
+  border: none;
   color: var(--text3);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 1px;
+  font-size: 16px;
   cursor: pointer;
-  padding: 1px 6px;
-  line-height: 1.4;
-  transition: all 0.15s;
-  font-family: var(--font-body);
+  padding: 0 4px;
+  line-height: 1;
+  border-radius: 4px;
 }
-.folder-menu-btn:hover {
-  background: var(--surface2);
-  border-color: var(--accent);
-  color: var(--accent);
-}
+.folder-menu-btn:hover { color: var(--accent); background: rgba(124,110,250,0.12); }
+.folder-name { cursor: pointer; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .folder-new-btn {
   font-size: 12px; color: var(--accent); padding: 8px 12px;

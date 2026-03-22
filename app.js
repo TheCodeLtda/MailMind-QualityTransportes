@@ -157,17 +157,24 @@ function init() {
   }
 }
 function loadApp(cfg) {
-  state.config=cfg;
-  state.rules=JSON.parse(localStorage.getItem('mailmind_rules')||'null')||DEFAULT_RULES;
-  state.emails=DEMO_EMAILS;
-  state.filteredEmails=[...state.emails];
-  // Restaura token do sessionStorage (sobrevive F5)
-  if (restoreToken()) {
-    fetchEmails().then(()=>{ renderEmailList(); updateFolderCounts(); updateUnreadBadge(); startPolling(); });
-  } else {
-    renderEmailList(); updateFolderCounts(); updateUnreadBadge();
-  }
+  state.config = cfg;
+  state.rules  = JSON.parse(localStorage.getItem('mailmind_rules')||'null') || DEFAULT_RULES;
+  state.emails = DEMO_EMAILS;
+  state.filteredEmails = [...state.emails];
+  state.useOutlookFolders = cfg.useOutlookFolders === true;
+
+  // Renderiza pastas imediatamente (com botões ···)
+  renderSidebarFolders();
   renderRules();
+  renderEmailList();
+  updateFolderCounts();
+  updateUnreadBadge();
+
+  // Restaura token do sessionStorage (sobrevive F5 e fechar/abrir aba)
+  if (restoreToken()) {
+    if (state.useOutlookFolders) loadOutlookFolders();
+    fetchEmails().then(() => startPolling());
+  }
 }
 
 // ============================================================
@@ -210,8 +217,13 @@ function toggleVisibility(inputId,btn) {
 function resetConfig() {
   if(!confirm('Apagar todas as configurações e voltar ao setup? Continuar?')) return;
   stopPolling();
-  localStorage.removeItem('mailmind_config'); localStorage.removeItem('mailmind_rules');
-  sessionStorage.removeItem('mm_token'); sessionStorage.removeItem('mm_expires_at');
+  localStorage.removeItem('mailmind_config');
+  localStorage.removeItem('mailmind_rules');
+  localStorage.removeItem('mm_token');
+  localStorage.removeItem('mm_expires_at');
+  localStorage.removeItem('mm_fixed_folders');
+  sessionStorage.removeItem('mm_token');
+  sessionStorage.removeItem('mm_expires_at');
   location.reload();
 }
 
@@ -239,29 +251,80 @@ function connectOutlook() {
     } catch {}
   },500);
 }
-function handleToken(token,expiresIn) {
-  state.accessToken=token; state.connected=true;
-  const expiresAt=Date.now()+((parseInt(expiresIn)||3600)*1000);
-  sessionStorage.setItem('mm_token',token);
-  sessionStorage.setItem('mm_expires_at',String(expiresAt));
-  document.getElementById('connectBtn').innerHTML='✅ Conectado';
+function handleToken(token, expiresIn) {
+  state.accessToken = token; state.connected = true;
+  const expiresAt = Date.now() + ((parseInt(expiresIn) || 3600) * 1000);
+  localStorage.setItem('mm_token', token);
+  localStorage.setItem('mm_expires_at', String(expiresAt));
+  document.getElementById('connectBtn').innerHTML = '✅ Conectado';
   document.getElementById('connectBtn').classList.add('connected');
-  document.getElementById('connectStatus').textContent='Outlook conectado';
+  document.getElementById('connectStatus').textContent = 'Outlook conectado';
   showNotif('success','✅','Outlook conectado com sucesso!');
-  // Carrega pastas do Outlook se habilitado
-  const cfg=loadConfig();
-  state.useOutlookFolders=cfg.useOutlookFolders===true;
-  if(state.useOutlookFolders) loadOutlookFolders();
+  const cfg = loadConfig();
+  state.useOutlookFolders = cfg.useOutlookFolders === true;
+  if (state.useOutlookFolders) loadOutlookFolders();
   fetchEmails().then(() => startPolling());
+  // Agenda renovação silenciosa 5 min antes de expirar
+  scheduleTokenRenewal(expiresAt);
 }
+
+function scheduleTokenRenewal(expiresAt) {
+  const msUntilRenew = (expiresAt - Date.now()) - (5 * 60 * 1000); // 5 min antes
+  if (msUntilRenew <= 0) { silentRenewToken(); return; }
+  setTimeout(silentRenewToken, msUntilRenew);
+}
+
+function silentRenewToken() {
+  const cfg = loadConfig();
+  if (!cfg.clientId) return;
+  const redirectUri  = encodeURIComponent(cfg.redirectUri || window.location.origin);
+  const tenantId     = cfg.tenantId || 'common';
+  const scopes       = encodeURIComponent('openid profile email Mail.Read Mail.ReadWrite Mail.Send offline_access');
+  const url = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize`
+    + `?client_id=${cfg.clientId}&response_type=token&redirect_uri=${redirectUri}`
+    + `&scope=${scopes}&response_mode=fragment&prompt=none`;
+
+  const iframe = document.createElement('iframe');
+  iframe.style.display = 'none';
+  iframe.src = url;
+  document.body.appendChild(iframe);
+
+  iframe.onload = () => {
+    try {
+      const hash = iframe.contentWindow.location.hash;
+      const params = new URLSearchParams(hash.replace('#',''));
+      const newToken = params.get('access_token');
+      const expiresIn = params.get('expires_in');
+      if (newToken) {
+        state.accessToken = newToken;
+        const expiresAt = Date.now() + ((parseInt(expiresIn) || 3600) * 1000);
+        localStorage.setItem('mm_token', newToken);
+        localStorage.setItem('mm_expires_at', String(expiresAt));
+        scheduleTokenRenewal(expiresAt);
+        console.log('Token renovado silenciosamente');
+      }
+    } catch(e) {
+      // Sessão expirou — precisa reconectar
+      console.warn('Renovação silenciosa falhou, usuário precisará reconectar');
+    }
+    document.body.removeChild(iframe);
+  };
+
+  setTimeout(() => { if (iframe.parentNode) document.body.removeChild(iframe); }, 10000);
+}
+
 function restoreToken() {
-  const token=sessionStorage.getItem('mm_token');
-  const expiresAt=parseInt(sessionStorage.getItem('mm_expires_at')||'0');
-  if(!token||Date.now()>=expiresAt) return false;
-  state.accessToken=token; state.connected=true;
-  document.getElementById('connectBtn').innerHTML='✅ Conectado';
+  const token     = localStorage.getItem('mm_token')     || sessionStorage.getItem('mm_token');
+  const expiresAt = parseInt(localStorage.getItem('mm_expires_at') || sessionStorage.getItem('mm_expires_at') || '0');
+  if (!token || Date.now() >= expiresAt) return false;
+  state.accessToken = token; state.connected = true;
+  localStorage.setItem('mm_token', token);
+  localStorage.setItem('mm_expires_at', String(expiresAt));
+  document.getElementById('connectBtn').innerHTML = '✅ Conectado';
   document.getElementById('connectBtn').classList.add('connected');
-  document.getElementById('connectStatus').textContent='Outlook conectado';
+  document.getElementById('connectStatus').textContent = 'Outlook conectado';
+  // Agenda renovação se necessário
+  scheduleTokenRenewal(expiresAt);
   return true;
 }
 
@@ -290,11 +353,11 @@ function renderSidebarFolders() {
     // Pastas reais do Outlook com menu de contexto
     const colors = ['#7C6EFA','#5DCAA5','#EF9F27','#F0997B','#E24B4A','#4AACE2','#B26EFA'];
     list.innerHTML = state.outlookFolders.map((f, i) => `
-      <div class="folder-item folder-item-outlook" onclick="fetchEmailsByFolder('${f.id}','${escHtml(f.displayName)}')" data-folderid="${f.id}">
+      <div class="folder-item folder-item-outlook" data-folderid="${f.id}">
         <div class="folder-dot" style="background:${colors[i % colors.length]}"></div>
-        <span class="folder-name">${escHtml(f.displayName)}</span>
+        <span class="folder-name" onclick="fetchEmailsByFolder('${f.id}','${escHtml(f.displayName)}')">${escHtml(f.displayName)}</span>
         <span class="folder-count">${f.unreadItemCount > 0 ? f.unreadItemCount : ''}</span>
-        <button class="folder-menu-btn" onclick="event.stopPropagation();openFolderMenu('${f.id}','${escHtml(f.displayName)}',this)" title="Opções">···</button>
+        <button class="folder-menu-btn" onclick="event.stopPropagation();openFolderMenu('${f.id}','${escHtml(f.displayName)}',this)" title="Opções">•••</button>
       </div>`).join('') +
       `<div class="folder-new-btn" onclick="openNewFolderModal()">+ Nova pasta</div>`;
   } else {
@@ -309,11 +372,11 @@ function renderSidebarFolders() {
       ];
     }
     list.innerHTML = state.fixedFolders.map(f => `
-      <div class="folder-item folder-item-fixed" onclick="filterByFolder('${escHtml(f.name)}')" data-foldername="${escHtml(f.name)}">
+      <div class="folder-item folder-item-fixed" data-foldername="${escHtml(f.name)}">
         <div class="folder-dot" style="background:${f.color}"></div>
-        <span class="folder-name">${escHtml(f.name)}</span>
-        <span class="folder-count" id="cnt-${escHtml(f.name)}">0</span>
-        <button class="folder-menu-btn" onclick="event.stopPropagation();openFixedFolderMenu(event,'${escHtml(f.name)}')" title="Opções">···</button>
+        <span class="folder-name" onclick="filterByFolder('${escHtml(f.name)}')">${escHtml(f.name)}</span>
+        <span class="folder-count" id="cnt-${escHtml(f.name)}"></span>
+        <button class="folder-menu-btn" onclick="event.stopPropagation();openFixedFolderMenu(event,'${escHtml(f.name)}')" title="Opções">•••</button>
       </div>`).join('') +
       `<div class="folder-new-btn" onclick="addFixedFolder()">+ Nova pasta</div>`;
     updateFolderCounts();
