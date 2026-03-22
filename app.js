@@ -818,6 +818,50 @@ function buildEmailObj(m) {
 }
 
 const PAGE_SIZE = 50;
+// Pastas especiais do Outlook: sentitems, deleteditems, inbox
+const SPECIAL_FOLDER_NAMES = {
+  sentitems:    'Enviados',
+  deleteditems: 'Excluídos',
+  inbox:        'Caixa de Entrada',
+};
+
+async function loadSpecialFolder(folderKey) {
+  // null = voltar para caixa de entrada padrão
+  if (!folderKey) {
+    document.getElementById('panelTitle').textContent = 'Caixa de Entrada';
+    state.currentFolder = null; state.currentFilter = 'all';
+    state.page.current = 1; state.page.prevLinks = []; state.page.nextLink = null;
+    document.querySelectorAll('.folder-item').forEach(el => el.classList.remove('active-folder'));
+    if (state.accessToken) fetchEmails();
+    return;
+  }
+
+  if (!state.accessToken) { showNotif('error','❌','Conecte o Outlook primeiro'); return; }
+
+  const name = SPECIAL_FOLDER_NAMES[folderKey] || folderKey;
+  document.getElementById('panelTitle').textContent = name;
+  state.currentFolder = name;
+  state.page.current = 1; state.page.prevLinks = []; state.page.nextLink = null;
+  document.querySelectorAll('.folder-item').forEach(el => el.classList.remove('active-folder'));
+
+  showStatus(`Carregando ${name}...`);
+  try {
+    const url = `https://graph.microsoft.com/v1.0/me/mailFolders/${folderKey}/messages`
+      + `?$top=50&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance`
+      + `&$orderby=receivedDateTime desc`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${state.accessToken}`, 'Prefer':'outlook.body-content-type="html"' }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    state.emails = data.value.map(m => ({ ...buildEmailObj(m), folder: name }));
+    state.filteredEmails = [...state.emails];
+    state.page.nextLink = data['@odata.nextLink'] || null;
+    renderEmailList(); updateUnreadBadge(); renderPagination(); hideStatus();
+    showNotif('success','✅', `${state.emails.length} e-mails em ${name}`);
+  } catch(e) { hideStatus(); showNotif('error','❌','Erro: '+e.message); }
+}
+
 const BASE_URL  = 'https://graph.microsoft.com/v1.0/me/messages'
   + `?$top=${PAGE_SIZE}`
   + '&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance'

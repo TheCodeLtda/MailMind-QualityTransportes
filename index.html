@@ -83,9 +83,15 @@
 
   <div class="sidebar-section">
     <div class="sidebar-label">Navegação</div>
-    <button class="nav-item active" onclick="switchView('emails', this)">
+    <button class="nav-item active" onclick="switchView('emails', this); loadSpecialFolder(null)">
       <span class="nav-icon">📧</span> Caixa de Entrada
       <span class="badge" id="unreadBadge">0</span>
+    </button>
+    <button class="nav-item" onclick="switchView('emails', this); loadSpecialFolder('sentitems')">
+      <span class="nav-icon">📤</span> Enviados
+    </button>
+    <button class="nav-item" onclick="switchView('emails', this); loadSpecialFolder('deleteditems')">
+      <span class="nav-icon">🗑</span> Excluídos
     </button>
     <button class="nav-item" onclick="switchView('rules', this)">
       <span class="nav-icon">⚡</span> Regras de IA
@@ -100,26 +106,7 @@
   <div class="sidebar-section">
     <div class="sidebar-label">Pastas</div>
     <div id="folderList">
-      <div class="folder-item" onclick="filterByFolder('Trabalho')">
-        <div class="folder-dot" style="background:#7C6EFA"></div>
-        Trabalho <span class="folder-count" id="cnt-Trabalho">0</span>
-      </div>
-      <div class="folder-item" onclick="filterByFolder('Financeiro')">
-        <div class="folder-dot" style="background:#5DCAA5"></div>
-        Financeiro <span class="folder-count" id="cnt-Financeiro">0</span>
-      </div>
-      <div class="folder-item" onclick="filterByFolder('Marketing')">
-        <div class="folder-dot" style="background:#EF9F27"></div>
-        Marketing <span class="folder-count" id="cnt-Marketing">0</span>
-      </div>
-      <div class="folder-item" onclick="filterByFolder('Pessoal')">
-        <div class="folder-dot" style="background:#F0997B"></div>
-        Pessoal <span class="folder-count" id="cnt-Pessoal">0</span>
-      </div>
-      <div class="folder-item" onclick="filterByFolder('Outros')">
-        <div class="folder-dot" style="background:#888780"></div>
-        Outros <span class="folder-count" id="cnt-Outros">0</span>
-      </div>
+      <!-- Renderizado por renderSidebarFolders() -->
     </div>
   </div>
 
