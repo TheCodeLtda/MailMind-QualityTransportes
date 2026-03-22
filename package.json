@@ -2,7 +2,8 @@
   "name": "mailmind",
   "version": "1.0.0",
   "private": true,
+  "description": "MailMind — Automação de e-mails Outlook com IA",
   "engines": {
-    "node": "24.x"
+    "node": ">=18.0.0"
   }
 }
