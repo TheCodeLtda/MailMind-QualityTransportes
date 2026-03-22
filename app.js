@@ -363,8 +363,8 @@ function openFixedFolderMenu(event, name) {
   menu.id = 'folderCtxMenu';
   menu.className = 'folder-ctx-menu';
   menu.innerHTML = `
-    <div class="ctx-item" onclick="openShareFolderModal('${escHtml(name)}')">→ Compartilhar pasta</div>
-    <div class="ctx-item" onclick="renameFixedFolder('${escHtml(name)}')">✏️ Renomear</div>
+    <div class="ctx-item" onclick="menu_shareFolder('${escHtml(name)}')">→ Compartilhar pasta</div>
+    <div class="ctx-item" onclick="menu_renameFixed('${escHtml(name)}')">✏️ Renomear</div>
     <div class="ctx-item ctx-danger" onclick="deleteFixedFolder('${escHtml(name)}')">🗑 Excluir</div>`;
   const rect = event.currentTarget.getBoundingClientRect();
   menu.style.top  = (rect.bottom + 4) + 'px';
@@ -372,6 +372,9 @@ function openFixedFolderMenu(event, name) {
   document.body.appendChild(menu);
   setTimeout(() => { document.addEventListener('click', () => menu.remove(), { once: true }); }, 50);
 }
+// Wrappers que fecham o menu antes de abrir modal (evita propagação cancelando o modal)
+function menu_shareFolder(name, folderId) { document.getElementById('folderCtxMenu')?.remove(); document.getElementById('emailCtxMenu')?.remove(); setTimeout(() => openShareFolderModal(name, folderId||null), 10); }
+function menu_renameFixed(name)  { document.getElementById('folderCtxMenu')?.remove(); setTimeout(() => renameFixedFolder(name), 10); }
 
 function addFixedFolder() {
   const name = prompt('Nome da nova pasta:');
@@ -412,15 +415,14 @@ function deleteFixedFolder(name) {
   showNotif('success','✅',`Pasta "${name}" excluída!`);
 }
 function openFolderMenu(folderId, folderName, btn) {
-  // Remove menu existente
   document.getElementById('folderCtxMenu')?.remove();
 
   const menu = document.createElement('div');
   menu.id = 'folderCtxMenu';
   menu.className = 'folder-ctx-menu';
   menu.innerHTML = `
-    <div class="ctx-item" onclick="openShareFolderModal('${escHtml(folderName)}')">→ Compartilhar pasta</div>
-    <div class="ctx-item" onclick="openRenameFolderModal('${folderId}','${escHtml(folderName)}')">✏️ Renomear</div>
+    <div class="ctx-item" onclick="menu_shareFolder('${escHtml(folderName)}','${folderId}')">→ Compartilhar pasta</div>
+    <div class="ctx-item" onclick="menu_renameOutlook('${folderId}','${escHtml(folderName)}')">✏️ Renomear</div>
     <div class="ctx-item ctx-danger" onclick="confirmDeleteFolder('${folderId}','${escHtml(folderName)}')">🗑 Excluir pasta</div>`;
 
   const rect = btn.getBoundingClientRect();
@@ -428,11 +430,11 @@ function openFolderMenu(folderId, folderName, btn) {
   menu.style.left = rect.left   + 'px';
   document.body.appendChild(menu);
 
-  // Fecha ao clicar fora
   setTimeout(() => {
     document.addEventListener('click', () => menu.remove(), { once: true });
   }, 50);
 }
+function menu_renameOutlook(id, name) { document.getElementById('folderCtxMenu')?.remove(); setTimeout(() => openRenameFolderModal(id, name), 10); }
 
 function openNewFolderModal() {
   const name = prompt('Nome da nova pasta:');
@@ -555,16 +557,26 @@ async function executeRuleAction(email, rule) {
 // ============================================================
 let _shareFolderTarget = null; // { name, emails[] }
 
-function openShareFolderModal(folderName) {
+function openShareFolderModal(folderName, folderId) {
+  // Busca e-mails já carregados no state com essa pasta
   const emails = state.emails.filter(e => e.folder === folderName);
-  _shareFolderTarget = { name: folderName, emails };
+
+  // Se for pasta do Outlook, também guarda o folderId para buscar via API se necessário
+  _shareFolderTarget = { name: folderName, folderId: folderId || null, emails };
+
+  const count = folderId
+    ? (emails.length > 0 ? emails.length : '?') // do Outlook: pode ter mais que os carregados
+    : emails.length;
 
   document.getElementById('shareFolderSub').textContent =
-    `Encaminhar ${emails.length} e-mail(s) da pasta "${folderName}" para um destinatário.`;
+    `Encaminhar e-mails da pasta "${folderName}" para um destinatário.`;
   document.getElementById('shareFolderInfo').innerHTML =
-    emails.length === 0
+    emails.length === 0 && !folderId
       ? '<div class="share-empty">Nenhum e-mail nesta pasta no momento.</div>'
-      : `<div class="share-preview">${emails.slice(0,3).map(e=>`<div class="share-item">📧 ${escHtml(e.subject)}</div>`).join('')}${emails.length>3?`<div class="share-more">...e mais ${emails.length-3}</div>`:''}</div>`;
+      : emails.length > 0
+        ? `<div class="share-preview">${emails.slice(0,3).map(e=>`<div class="share-item">📧 ${escHtml(e.subject)}</div>`).join('')}${emails.length>3?`<div class="share-more">...e mais ${emails.length-3} e-mails</div>`:''}</div>`
+        : '<div class="share-empty">Os e-mails serão buscados da pasta ao encaminhar.</div>';
+
   document.getElementById('shareFolderEmail').value = '';
   document.getElementById('shareFolderMessage').value = '';
   document.getElementById('shareFolderModal').classList.add('open');
@@ -575,26 +587,56 @@ async function submitShareFolder() {
   const msg = document.getElementById('shareFolderMessage').value.trim();
   if (!to) { showNotif('error','❌','Informe o destinatário'); return; }
   if (!state.accessToken) { showNotif('error','❌','Conecte o Outlook primeiro'); return; }
-  if (!_shareFolderTarget?.emails.length) { showNotif('error','❌','Nenhum e-mail para encaminhar'); return; }
 
   const btn = document.getElementById('shareFolderBtn');
   btn.textContent = 'Encaminhando...'; btn.disabled = true;
 
-  const emails = _shareFolderTarget.emails;
+  // Usa os e-mails já carregados em state (suficiente para pastas fixas)
+  // Para pastas do Outlook, usa o folderId se disponível
+  let emails = _shareFolderTarget?.emails || [];
+
+  // Se não tiver nenhum e-mail carregado, tenta buscar pelo folderId
+  if (emails.length === 0 && _shareFolderTarget?.folderId && state.accessToken) {
+    try {
+      const res = await fetch(
+        `https://graph.microsoft.com/v1.0/me/mailFolders/${_shareFolderTarget.folderId}/messages?$top=50&$select=id,subject`,
+        { headers: { Authorization: `Bearer ${state.accessToken}` } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        emails = data.value || [];
+      }
+    } catch {}
+  }
+
+  if (!emails.length) {
+    btn.textContent = 'Encaminhar'; btn.disabled = false;
+    showNotif('error','❌','Nenhum e-mail encontrado nesta pasta');
+    return;
+  }
+
+  // Atualiza preview com total real
+  document.getElementById('shareFolderSub').textContent =
+    `Encaminhando ${emails.length} e-mail(s) para ${to}...`;
+
   let ok = 0, fail = 0;
+  const comment = msg || `E-mails encaminhados da pasta "${_shareFolderTarget.name}"`;
 
   for (const email of emails) {
     try {
-      await sendForward(email.id, to, msg ? `<p>${escHtml(msg)}</p><hr>` : '');
+      await sendForward(email.id, to, comment);
       ok++;
-    } catch { fail++; }
+    } catch(e) {
+      console.warn('Erro ao encaminhar:', email.id, e);
+      fail++;
+    }
   }
 
   btn.textContent = 'Encaminhar'; btn.disabled = false;
   document.getElementById('shareFolderModal').classList.remove('open');
 
   if (fail === 0) showNotif('success','✅',`${ok} e-mail(s) encaminhado(s) para ${to}!`);
-  else showNotif('error','❌',`${ok} enviados, ${fail} com erro.`);
+  else showNotif('error','❌',`${ok} enviado(s), ${fail} com erro.`);
 }
 // ============================================================
 async function sendReply(emailId, bodyHtml, toAll) {
