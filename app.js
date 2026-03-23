@@ -491,11 +491,8 @@ async function addFixedFolder() {
   if (state.connected && state.accessToken) {
     showStatus('Sincronizando pasta no Outlook...');
     try {
-      await fetch('https://graph.microsoft.com/v1.0/me/mailFolders', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type':'application/json' },
-        body: JSON.stringify({ displayName: n }),
-      });
+      // Usa getTargetFolderId para garantir a estrutura hierárquica (MailMind > Pasta)
+      await getTargetFolderId(n);
       showNotif('success','✅',`Pasta "${n}" criada e sincronizada!`);
     } catch(e) {
       console.warn(e);
