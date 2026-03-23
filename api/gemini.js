@@ -6,8 +6,11 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   // Chave fornecida no prompt ou via ENV.
-  // Prioridade: Body da requisição > Variável de Ambiente > Chave Hardcoded (fallback do prompt)
-  const apiKey = req.body.apiKey || process.env.GEMINI_API_KEY || 'AIzaSyDKBvEJMYN1QrldN_2QhdESN1CHtyttme4';
+  // CORREÇÃO: Verifica se a chave vinda do frontend é antiga (sk-...) e força a nova se necessário
+  let apiKey = req.body.apiKey;
+  if (!apiKey || apiKey.startsWith('sk-')) {
+    apiKey = process.env.GEMINI_API_KEY || 'AIzaSyDKBvEJMYN1QrldN_2QhdESN1CHtyttme4';
+  }
 
   if (!apiKey) {
     return res.status(500).json({ error: 'API Key do Gemini não configurada.' });

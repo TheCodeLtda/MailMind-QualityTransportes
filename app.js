@@ -1216,6 +1216,8 @@ async function renderEmailBody(email) {
     // Remove apenas scripts e handlers — preserva estilos e cores originais do e-mail
     html=html
       .replace(/<script[\s\S]*?<\/script>/gi,'')
+      // Força HTTPS em imagens para evitar Mixed Content (backup caso meta tag não pegue tudo)
+      .replace(/http:\/\/admin.protection.outlook.com/gi, 'https://admin.protection.outlook.com')
       .replace(/\son\w+\s*=\s*["'][^"']*["']/gi,'')
       .replace(/javascript:/gi,'');
 
@@ -1315,7 +1317,11 @@ async function sendChat() {
   const systemPrompt=`Você é um assistente inteligente de e-mails do Outlook. Responda sempre em português brasileiro de forma clara.\n\nE-mails disponíveis (${state.emails.length}):\n${emailsContext}`;
   
   // Mapeia histórico para formato Gemini (role: 'user' | 'model')
-  const history=state.chatHistory.map(m=>({ role: m.role==='assistant'?'model':'user', parts:[{text:m.text}] }));
+  // Filtra mensagens vazias para evitar erro 400
+  const history=state.chatHistory
+    .filter(m => m.text && m.text.trim() !== '')
+    .map(m=>({ role: m.role==='assistant'?'model':'user', parts:[{text:m.text}] }));
+  
   history.push({role:'user', parts:[{text:msg}]});
 
   try {
