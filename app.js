@@ -1589,7 +1589,7 @@ async function sendChat() {
     const body=e.bodyText||stripHtml(e.bodyHtml||'')||e.preview||'';
     return `[${e.dateFormatted||e.date}] De: ${e.fromName} <${e.from}> | Pasta: ${e.folder}\nAssunto: ${e.subject}\nCorpo: ${body.substring(0,300)}`;
   }).join('\n\n---\n\n');
-  const systemPrompt=`Você é um assistente de e-mails objetivo e direto. Responda SEMPRE em português brasileiro. Seja CONCISO: máximo 3-5 linhas por resposta, sem introduções longas, sem repetir a pergunta. Vá direto ao ponto com informações práticas.\n\nE-mails disponíveis (${state.emails.length}):\n${emailsContext}`;
+  const systemPrompt=`Você é um assistente de e-mails inteligente e equilibrado. Responda SEMPRE em português brasileiro. Forneça respostas claras e completas: evite ser excessivamente breve se houver detalhes importantes, mas não escreva textos gigantes ou difíceis de ler. Use parágrafos curtos e listas (tópicos) para organizar a informação. Seja útil e vá direto ao ponto, explicando o necessário.\n\nE-mails disponíveis (${state.emails.length}):\n${emailsContext}`;
   
   // Mapeia histórico para formato Gemini (role: 'user' | 'model')
   // Filtra mensagens vazias para evitar erro 400
