@@ -102,8 +102,11 @@ function loadConfig() {
   try { 
     const cfg = JSON.parse(localStorage.getItem('mailmind_config')||'{}');
     // Migração automática: Garante uso do modelo padrão estável sem sufixos problemáticos
-    // (O backend cuidará do sufixo -latest, mantemos o nome limpo aqui)
-    if (!cfg.model) cfg.model = 'gemini-1.5-flash-latest';
+    // Força a atualização se o modelo salvo for a versão antiga/curta que causa erro 404
+    if (!cfg.model || cfg.model === 'gemini-1.5-flash') {
+      cfg.model = 'gemini-1.5-flash-latest';
+      localStorage.setItem('mailmind_config', JSON.stringify(cfg));
+    }
     return cfg;
   } catch { return {}; }
 }
@@ -989,6 +992,10 @@ async function geminiApi(contents, systemInstruction=null) {
   const cfg = loadConfig();
   // Garante o modelo padrão correto (API v1beta exige sufixo -latest ou -001)
   let model = cfg.model || 'gemini-1.5-flash-latest';
+  
+  // CORREÇÃO DE SEGURANÇA: Se por algum motivo ainda vier sem o sufixo, forçamos aqui
+  if (model === 'gemini-1.5-flash') model = 'gemini-1.5-flash-latest';
+  if (model === 'gemini-1.5-pro') model = 'gemini-1.5-pro-latest';
   
   const apiKey = cfg.claudeApiKey;
   if (!apiKey) throw new Error('API Key não configurada');
