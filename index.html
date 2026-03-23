@@ -31,11 +31,11 @@
 
     <!-- STEP 1 — Claude API Key -->
     <div class="setup-step-panel active" id="stepPanel1">
-      <div class="step-panel-title"> Chave da API do Claude</div>
+      <div class="step-panel-title"> Chave da API do Google Gemini</div>
       <div class="step-panel-desc">Necessária para classificação inteligente e chat com seus e-mails.</div>
       <div class="setup-input-group">
-        <label class="form-label">Chave Anthropic</label>
-        <input type="password" class="setup-input" id="claudeApiKey" placeholder="sk-ant-..."/>
+        <label class="form-label">Chave Google AI (Gemini)</label>
+        <input type="password" class="setup-input" id="claudeApiKey" placeholder="AIzaSy..."/>
       </div>
       <div class="setup-hint"> Armazenada apenas localmente no seu navegador.</div>
       <button class="setup-btn" onclick="setupNext(1)">Próximo →</button>
@@ -218,26 +218,26 @@
   <div class="section-sub">Visualize e altere suas credenciais e preferências.</div>
 
   <div class="config-group">
-    <div class="config-group-title">API Claude</div>
+    <div class="config-group-title">API Google Gemini</div>
     <div class="config-row">
       <div>
         <div class="config-label">Chave da API</div>
-        <div class="config-sub">Sua chave Anthropic (sk-ant-...)</div>
+        <div class="config-sub">Sua chave Google AI (AIzaSy...)</div>
       </div>
       <div class="config-input-wrap">
-        <input type="password" class="config-input" id="configApiKey" placeholder="sk-ant-..."/>
+        <input type="password" class="config-input" id="configApiKey" placeholder="AIzaSy..."/>
         <button class="config-eye-btn" onclick="toggleVisibility('configApiKey', this)" title="Mostrar/ocultar">👁</button>
       </div>
     </div>
     <div class="config-row">
       <div>
         <div class="config-label">Modelo</div>
-        <div class="config-sub">Modelo Claude a ser usado</div>
+        <div class="config-sub">Modelo Gemini a ser usado</div>
       </div>
       <select class="config-input" id="configModel">
-        <option value="claude-sonnet-4-6">Claude Sonnet 4.6 (Recomendado)</option>
-        <option value="claude-sonnet-4-5-20250929">Claude Sonnet 4.5</option>
-        <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (Mais rápido)</option>
+        <option value="gemini-1.5-flash">Gemini 1.5 Flash (Rápido/Recomendado)</option>
+        <option value="gemini-1.5-pro">Gemini 1.5 Pro (Mais inteligente)</option>
+        <option value="gemini-2.0-flash">Gemini 2.0 Flash (Preview)</option>
       </select>
     </div>
   </div>
@@ -308,7 +308,7 @@
 <div class="modal-overlay" id="ruleModal">
   <div class="modal" style="max-width:520px">
     <div class="modal-title">Nova Regra de Classificação</div>
-    <div class="modal-sub">O Claude usará esta regra para classificar e-mails automaticamente.</div>
+    <div class="modal-sub">A IA usará esta regra para classificar e-mails automaticamente.</div>
 
     <div class="form-group">
       <label class="form-label">Nome da Regra</label>

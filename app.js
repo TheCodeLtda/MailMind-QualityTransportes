@@ -116,14 +116,14 @@ function showSetupStep(step) {
 function setupNext(currentStep) {
   if (currentStep===1) {
     const key=document.getElementById('claudeApiKey').value.trim();
-    if (!key||!key.startsWith('sk-')) { showNotif('error','❌','Insira uma chave válida (começa com sk-)'); return; }
+    if (!key) { showNotif('error','❌','Insira uma chave válida'); return; }
     showSetupStep(2);
   } else if (currentStep===2) {
     const clientId=document.getElementById('msClientId').value.trim();
     if (!clientId) { showNotif('error','❌','Insira o Client ID do Azure'); return; }
     const tenantId=document.getElementById('msTenantId').value.trim()||'common';
     document.getElementById('setupSummary').innerHTML=`
-      <div class="summary-row"><span>Chave Claude</span><span>sk-ant-••••••••</span></div>
+      <div class="summary-row"><span>Chave Gemini</span><span>••••••••••••</span></div>
       <div class="summary-row"><span>Client ID</span><span>${escHtml(clientId.substring(0,8))}...</span></div>
       <div class="summary-row"><span>Tenant ID</span><span>${escHtml(tenantId)}</span></div>
       <div class="summary-row"><span>Redirect URI</span><span>${escHtml(window.location.origin)}</span></div>`;
@@ -135,8 +135,8 @@ function saveSetup() {
   const key=document.getElementById('claudeApiKey').value.trim();
   const clientId=document.getElementById('msClientId').value.trim();
   const tenantId=document.getElementById('msTenantId').value.trim()||'common';
-  if (!key) { showNotif('error','❌','Insira sua chave da API do Claude'); return; }
-  const cfg={claudeApiKey:key,clientId,tenantId,redirectUri:window.location.origin,model:'claude-sonnet-4-6',autoClassify:true,batchSize:20};
+  if (!key) { showNotif('error','❌','Insira sua chave da API'); return; }
+  const cfg={claudeApiKey:key,clientId,tenantId,redirectUri:window.location.origin,model:'gemini-1.5-flash',autoClassify:true,batchSize:20};
   localStorage.setItem('mailmind_config',JSON.stringify(cfg));
   document.getElementById('setupScreen').classList.add('hidden');
   loadApp(cfg);
@@ -184,7 +184,7 @@ function populateConfigPanel() {
   let cfg={};
   try { cfg=JSON.parse(localStorage.getItem('mailmind_config')||'{}'); } catch {}
   if (!cfg.claudeApiKey && state.config?.claudeApiKey) cfg=state.config;
-  const fields={configApiKey:cfg.claudeApiKey||'',configClientId:cfg.clientId||'',configTenantId:cfg.tenantId||'',configRedirectUri:cfg.redirectUri||window.location.origin,configModel:cfg.model||'claude-sonnet-4-6',configBatchSize:cfg.batchSize||20};
+  const fields={configApiKey:cfg.claudeApiKey||'',configClientId:cfg.clientId||'',configTenantId:cfg.tenantId||'',configRedirectUri:cfg.redirectUri||window.location.origin,configModel:cfg.model||'gemini-1.5-flash',configBatchSize:cfg.batchSize||20};
   Object.entries(fields).forEach(([id,val])=>{ const el=document.getElementById(id); if(el) el.value=val; });
   const ac=document.getElementById('autoClassify'); if(ac) ac.checked=cfg.autoClassify!==false;
   const of=document.getElementById('useOutlookFolders'); if(of) of.checked=cfg.useOutlookFolders===true;
@@ -977,21 +977,29 @@ async function moveEmail(emailId,folderName) {
 }
 
 // ============================================================
-// CLAUDE API
+// GEMINI API
 // ============================================================
-async function claudeApi(messages, maxTokens=1000, system=null) {
+async function geminiApi(contents, systemInstruction=null) {
   const cfg = loadConfig();
-  const model = cfg.model || 'claude-sonnet-4-6';
-  const body = { model, max_tokens: maxTokens, messages };
-  if (system) body.system = system;
+  const model = cfg.model || 'gemini-1.5-flash';
+  
+  // Adapta corpo para API do Gemini
+  const body = { 
+    model, 
+    apiKey: cfg.claudeApiKey, // Usamos o mesmo campo no config mas passamos como apiKey
+    contents: contents 
+  };
+  
+  if (systemInstruction) {
+    body.systemInstruction = { parts: [{ text: systemInstruction }] };
+  }
 
-  const res = await fetch('/api/claude', {
+  const res = await fetch('/api/gemini', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
 
-  // Tenta JSON — se falhar, lança erro legível
   const text = await res.text();
   try {
     const data = JSON.parse(text);
@@ -1001,10 +1009,9 @@ async function claudeApi(messages, maxTokens=1000, system=null) {
     return data;
   } catch(e) {
     if (e.message.includes('HTTP')) throw e;
-    // HTML de erro do Vercel ou outro problema
-    if (res.status === 401 || res.status === 403) throw new Error('Chave da API inválida ou sem permissão');
-    if (res.status === 404) throw new Error('Proxy /api/claude não encontrado — verifique o deploy no Vercel');
-    if (res.status === 500) throw new Error('Erro no servidor — verifique ANTHROPIC_API_KEY nas variáveis do Vercel');
+    if (res.status === 401 || res.status === 403) throw new Error('Chave da API inválida');
+    if (res.status === 404) throw new Error('Proxy /api/gemini não encontrado');
+    if (res.status === 500) throw new Error('Erro no servidor ou na API do Google');
     throw new Error(`Resposta inesperada do servidor (${res.status})`);
   }
 }
@@ -1014,7 +1021,7 @@ async function claudeApi(messages, maxTokens=1000, system=null) {
 // ============================================================
 async function classifyAllEmails() {
   const cfg=loadConfig();
-  if(!cfg.claudeApiKey){showNotif('error','❌','Configure a chave da API do Claude');return;}
+  if(!cfg.claudeApiKey){showNotif('error','❌','Configure a chave da API');return;}
 
   const toProcess=state.emails.slice(0,cfg.batchSize||20);
   const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
@@ -1024,15 +1031,20 @@ async function classifyAllEmails() {
 
   for(let i=0;i<toProcess.length;i++){
     const email=toProcess[i];
-    if (btn) btn.textContent = `Classificando ${i+1}/${toProcess.length}...`;
-    showStatus(`Classificando e-mail ${i+1}/${toProcess.length}...`);
-    const folder=await classifyEmail(email);
-    email.folder=folder; email.tag=tagMap[folder]||'';
-    if(state.connected&&state.accessToken){
-      await moveEmail(email.id, folder);
-      // Executa ação automática da regra correspondente
-      const rule = state.rules.find(r => r.active && r.folder === folder && r.action && r.action !== 'none');
-      if (rule) await executeRuleAction(email, rule);
+    try {
+        if (btn) btn.textContent = `Classificando ${i+1}/${toProcess.length}...`;
+        showStatus(`Classificando e-mail ${i+1}/${toProcess.length}...`);
+        const folder=await classifyEmail(email);
+        email.folder=folder; email.tag=tagMap[folder]||'';
+        if(state.connected&&state.accessToken){
+        await moveEmail(email.id, folder);
+        // Executa ação automática da regra correspondente
+        const rule = state.rules.find(r => r.active && r.folder === folder && r.action && r.action !== 'none');
+        if (rule) await executeRuleAction(email, rule);
+        }
+    } catch (e) {
+        console.error(`Erro ao classificar email ${i+1}:`, e);
+        // Não interrompe o loop, apenas segue para o próximo
     }
     renderEmailList();
   }
@@ -1046,7 +1058,7 @@ async function classifyAllEmails() {
 async function classifySelected() {
   const email = state.selectedEmail; if (!email) return;
   const cfg = loadConfig();
-  if (!cfg.claudeApiKey) { showNotif('error','❌','Configure a chave da API do Claude'); return; }
+  if (!cfg.claudeApiKey) { showNotif('error','❌','Configure a chave da API'); return; }
   showStatus('Classificando e-mail...');
   const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
   const folder = await classifyEmail(email);
@@ -1066,8 +1078,8 @@ async function classifyEmail(email) {
   const bodyText=email.bodyText||stripHtml(email.bodyHtml||'')||email.preview||'';
   const prompt=`Classifique este e-mail. Responda APENAS com o nome da pasta.\n\nRegras:\n${rulesText}\n- "Outros": demais casos\n\nRemetente: ${email.from}\nAssunto: ${email.subject}\nCorpo: ${bodyText.substring(0,800)}\n\nPasta:`;
   try {
-    const res=await claudeApi([{role:'user',content:prompt}],50);
-    const text=res.content?.[0]?.text?.trim()||'Outros';
+    const res=await geminiApi([{role:'user', parts:[{text:prompt}]}]);
+    const text=res.candidates?.[0]?.content?.parts?.[0]?.text?.trim()||'Outros';
     return ['Financeiro','Trabalho','Marketing','Pessoal','Outros'].find(f=>text.includes(f))||'Outros';
   } catch { return 'Outros'; }
 }
@@ -1076,13 +1088,13 @@ async function summarizeSelected() {
   document.getElementById('aiSummaryBox').style.display='block';
   document.getElementById('aiSummaryText').textContent='Gerando resumo...';
   const cfg=loadConfig();
-  if(!cfg.claudeApiKey){document.getElementById('aiSummaryText').textContent='Configure a chave da API do Claude.';return;}
+  if(!cfg.claudeApiKey){document.getElementById('aiSummaryText').textContent='Configure a chave da API.';return;}
   const email=state.selectedEmail;
   const bodyText=email.bodyText||stripHtml(email.bodyHtml||'')||email.preview||'';
   const prompt=`Faça um resumo executivo em português, 2-3 frases. Destaque o ponto principal e ação necessária.\n\nDe: ${email.fromName} <${email.from}>\nAssunto: ${email.subject}\nCorpo:\n${bodyText.substring(0,1500)}`;
   try {
-    const res=await claudeApi([{role:'user',content:prompt}],200);
-    document.getElementById('aiSummaryText').textContent=res.content?.[0]?.text||'Não foi possível gerar o resumo.';
+    const res=await geminiApi([{role:'user', parts:[{text:prompt}]}]);
+    document.getElementById('aiSummaryText').textContent=res.candidates?.[0]?.content?.parts?.[0]?.text||'Não foi possível gerar o resumo.';
   } catch(e){document.getElementById('aiSummaryText').textContent='Erro: '+e.message;}
 }
 
@@ -1295,17 +1307,20 @@ async function sendChat() {
   addChatMessage('user',msg);
   const typing=addTyping();
   const cfg=loadConfig();
-  if(!cfg.claudeApiKey){removeTyping(typing);addChatMessage('assistant','Configure sua chave da API do Claude nas configurações.');return;}
+  if(!cfg.claudeApiKey){removeTyping(typing);addChatMessage('assistant','Configure sua chave da API nas configurações.');return;}
   const emailsContext=state.emails.map(e=>{
     const body=e.bodyText||stripHtml(e.bodyHtml||'')||e.preview||'';
     return `[${e.dateFormatted||e.date}] De: ${e.fromName} <${e.from}> | Pasta: ${e.folder}\nAssunto: ${e.subject}\nCorpo: ${body.substring(0,300)}`;
   }).join('\n\n---\n\n');
   const systemPrompt=`Você é um assistente inteligente de e-mails do Outlook. Responda sempre em português brasileiro de forma clara.\n\nE-mails disponíveis (${state.emails.length}):\n${emailsContext}`;
-  const history=state.chatHistory.map(m=>({role:m.role,content:m.text}));
-  history.push({role:'user',content:msg});
+  
+  // Mapeia histórico para formato Gemini (role: 'user' | 'model')
+  const history=state.chatHistory.map(m=>({ role: m.role==='assistant'?'model':'user', parts:[{text:m.text}] }));
+  history.push({role:'user', parts:[{text:msg}]});
+
   try {
-    const data=await claudeApi(history,1000,systemPrompt);
-    const reply=data.content?.[0]?.text||'Desculpe, não consegui processar.';
+    const data=await geminiApi(history,systemPrompt);
+    const reply=data.candidates?.[0]?.content?.parts?.[0]?.text||'Desculpe, não consegui processar.';
     removeTyping(typing); addChatMessage('assistant',reply);
     state.chatHistory.push({role:'user',text:msg},{role:'assistant',text:reply});
     if(state.chatHistory.length>20) state.chatHistory=state.chatHistory.slice(-20);
