@@ -136,7 +136,7 @@ function saveSetup() {
   const clientId=document.getElementById('msClientId').value.trim();
   const tenantId=document.getElementById('msTenantId').value.trim()||'common';
   if (!key) { showNotif('error','❌','Insira sua chave da API do Claude'); return; }
-  const cfg={claudeApiKey:key,clientId,tenantId,redirectUri:window.location.origin,model:'claude-sonnet-4-5',autoClassify:true,batchSize:20};
+  const cfg={claudeApiKey:key,clientId,tenantId,redirectUri:window.location.origin,model:'claude-sonnet-4-20250514',autoClassify:true,batchSize:20};
   localStorage.setItem('mailmind_config',JSON.stringify(cfg));
   document.getElementById('setupScreen').classList.add('hidden');
   loadApp(cfg);
@@ -184,7 +184,7 @@ function populateConfigPanel() {
   let cfg={};
   try { cfg=JSON.parse(localStorage.getItem('mailmind_config')||'{}'); } catch {}
   if (!cfg.claudeApiKey && state.config?.claudeApiKey) cfg=state.config;
-  const fields={configApiKey:cfg.claudeApiKey||'',configClientId:cfg.clientId||'',configTenantId:cfg.tenantId||'',configRedirectUri:cfg.redirectUri||window.location.origin,configModel:cfg.model||'claude-sonnet-4-5',configBatchSize:cfg.batchSize||20};
+  const fields={configApiKey:cfg.claudeApiKey||'',configClientId:cfg.clientId||'',configTenantId:cfg.tenantId||'',configRedirectUri:cfg.redirectUri||window.location.origin,configModel:cfg.model||'claude-sonnet-4-20250514',configBatchSize:cfg.batchSize||20};
   Object.entries(fields).forEach(([id,val])=>{ const el=document.getElementById(id); if(el) el.value=val; });
   const ac=document.getElementById('autoClassify'); if(ac) ac.checked=cfg.autoClassify!==false;
   const of=document.getElementById('useOutlookFolders'); if(of) of.checked=cfg.useOutlookFolders===true;
@@ -981,7 +981,7 @@ async function moveEmail(emailId,folderName) {
 // ============================================================
 async function claudeApi(messages, maxTokens=1000, system=null) {
   const cfg = loadConfig();
-  const model = cfg.model || 'claude-sonnet-4-5';
+  const model = cfg.model || 'claude-sonnet-4-20250514';
   const body = { model, max_tokens: maxTokens, messages };
   if (system) body.system = system;
 
