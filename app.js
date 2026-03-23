@@ -462,6 +462,7 @@ function openFixedFolderMenu(event, name) {
   menu.id = 'folderCtxMenu';
   menu.className = 'folder-ctx-menu';
   menu.innerHTML = `
+    <div class="ctx-item" onclick="summarizeFolder('${escHtml(name)}', null)">✨ Resumir pasta com IA</div>
     <div class="ctx-item" onclick="menu_shareFolder('${escHtml(name)}')">→ Compartilhar pasta</div>
     <div class="ctx-item" onclick="menu_renameFixed('${escHtml(name)}')">✏️ Renomear</div>
     <div class="ctx-item ctx-danger" onclick="deleteFixedFolder('${escHtml(name)}')">🗑 Excluir</div>`;
@@ -587,6 +588,7 @@ function openFolderMenu(folderId, folderName, btn) {
   menu.id = 'folderCtxMenu';
   menu.className = 'folder-ctx-menu';
   menu.innerHTML = `
+    <div class="ctx-item" onclick="summarizeFolder('${escHtml(folderName)}', '${folderId}')">✨ Resumir pasta com IA</div>
     <div class="ctx-item" onclick="menu_shareFolder('${escHtml(folderName)}','${folderId}')">→ Compartilhar pasta</div>
     <div class="ctx-item" onclick="menu_renameOutlook('${folderId}','${escHtml(folderName)}')">✏️ Renomear</div>
     <div class="ctx-item ctx-danger" onclick="confirmDeleteFolder('${folderId}','${escHtml(folderName)}')">🗑 Excluir pasta</div>`;
@@ -1607,6 +1609,53 @@ async function sendChat() {
     localStorage.setItem('mailmind_chat_history', JSON.stringify(state.chatHistory));
   } catch(e){removeTyping(typing);addChatMessage('assistant','Erro: '+e.message);}
 }
+
+async function summarizeFolder(folderName, folderId) {
+  document.getElementById('folderCtxMenu')?.remove();
+  switchTab('chat');
+  addChatMessage('user', `Resuma os e-mails da pasta "${folderName}"`);
+  const typing = addTyping();
+
+  try {
+    let emails = [];
+    // Busca ID se não fornecido (para pastas fixas)
+    if (!folderId && state.accessToken) {
+       folderId = await getTargetFolderId(folderName);
+    }
+
+    if (folderId && state.accessToken) {
+       const res = await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/${folderId}/messages?$top=15&$select=subject,from,bodyPreview,receivedDateTime`, {
+         headers: { Authorization: `Bearer ${state.accessToken}` }
+       });
+       if(res.ok) {
+         const data = await res.json();
+         emails = data.value || [];
+       }
+    }
+
+    if (!emails.length) {
+      removeTyping(typing);
+      addChatMessage('assistant', `Não encontrei e-mails recentes na pasta "${folderName}" para resumir.`);
+      return;
+    }
+
+    const context = emails.map(e => 
+      `- [${formatDate(e.receivedDateTime)}] De: ${e.from?.emailAddress?.name || 'Desconhecido'}: ${e.subject} | ${e.bodyPreview}`
+    ).join('\n');
+
+    const prompt = `Analise os seguintes e-mails da pasta "${folderName}" e crie um resumo executivo em tópicos. Identifique os temas principais, decisões tomadas e se há pendências urgentes.\n\n${context}`;
+    
+    const data = await geminiApi([{ role: 'user', parts: [{ text: prompt }] }]);
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Sem resposta da IA.';
+    
+    removeTyping(typing);
+    addChatMessage('assistant', text);
+  } catch (e) {
+    removeTyping(typing);
+    addChatMessage('assistant', 'Erro ao resumir pasta: ' + e.message);
+  }
+}
+
 function addChatMessage(role,text) {
   const msgs=document.getElementById('chatMessages');
   const div=document.createElement('div'); div.className=`msg ${role}`;
@@ -2100,15 +2149,20 @@ async function checkNewEmails() {
 
   // Pega o ID do e-mail mais recente que já temos
   const newestDate = state.emails.length > 0 ? state.emails[0].date : null;
-  if (!newestDate) return;
+
+  // Constrói URL base
+  let url = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=20` +
+      `&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance` +
+      `&$orderby=receivedDateTime desc`;
+
+  // Se tiver e-mails na lista, filtra apenas pelos mais novos que o topo
+  if (newestDate) {
+    const filter = encodeURIComponent(`receivedDateTime gt ${newestDate}`);
+    url += `&$filter=${filter}`;
+  }
 
   try {
-    const filter = encodeURIComponent(`receivedDateTime gt ${newestDate}`);
-    const res = await fetch(
-      `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=20&$filter=${filter}` +
-      `&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance` +
-      `&$orderby=receivedDateTime desc`,
-      { headers: {
+    const res = await fetch(url, { headers: {
           Authorization: `Bearer ${state.accessToken}`,
           'Prefer': 'outlook.body-content-type="html"',
       }}
