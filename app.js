@@ -1024,6 +1024,51 @@ async function geminiApi(contents, systemInstruction=null) {
 }
 
 // ============================================================
+// TESTE DE CONEXÃO GEMINI
+// ============================================================
+async function testGeminiConnection() {
+  showStatus('Testando conexão com a API do Gemini...');
+  
+  // Pega os valores diretamente dos campos de configuração para o teste
+  const apiKey = document.getElementById('configApiKey')?.value.trim();
+  let model = document.getElementById('configModel')?.value.trim();
+
+  if (!apiKey) {
+    hideStatus();
+    showNotif('error', '❌', 'Insira a chave da API do Gemini no campo acima para testar.');
+    return;
+  }
+
+  // Garante que o modelo tem o sufixo correto, como fazemos na função principal
+  if (model === 'gemini-1.5-flash') model = 'gemini-1.5-flash-latest';
+  if (model === 'gemini-1.5-pro') model = 'gemini-1.5-pro-latest';
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  
+  const payload = {
+    contents: [{ role: 'user', parts: [{ text: 'Olá! Responda apenas "OK" se estiver funcionando.' }] }]
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) throw new Error(data.error?.message || `Erro HTTP: ${response.status}`);
+
+    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Resposta vazia';
+    hideStatus();
+    showNotif('success', '✅', `Conexão OK! Resposta da IA: "${reply.trim()}"`);
+  } catch (error) {
+    hideStatus();
+    showNotif('error', '❌', `Falha na conexão: ${error.message}`);
+  }
+}
+// ============================================================
 // AI — CLASSIFY & SUMMARIZE
 // ============================================================
 async function classifyAllEmails() {
