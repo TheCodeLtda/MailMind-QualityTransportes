@@ -17,9 +17,11 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { contents, systemInstruction, model = 'gemini-1.5-flash' } = req.body;
+    const { contents, systemInstruction, model = 'gemini-1.5-flash-latest' } = req.body;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    // Garante que o nome do modelo não tenha o prefixo 'models/' duplicado
+    const cleanModel = model.replace(/^models\//, '');
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${apiKey}`;
 
     const payload = { contents };
     if (systemInstruction) {
