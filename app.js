@@ -101,12 +101,7 @@ const DEFAULT_RULES = [
 function loadConfig() {
   try { 
     const cfg = JSON.parse(localStorage.getItem('mailmind_config')||'{}');
-    // CORREÇÃO DEFINITIVA: Força o uso da versão específica '001' se estiver usando alias ou latest
-    if (!cfg.model || cfg.model === 'gemini-1.5-flash' || cfg.model.includes('-latest')) {
-      cfg.model = 'gemini-1.5-flash-001';
-      localStorage.setItem('mailmind_config', JSON.stringify(cfg));
-    }
-    return cfg;
+    return cfg || {};
   } catch { return {}; }
 }
 
@@ -990,7 +985,7 @@ async function moveEmail(emailId,folderName) {
 async function geminiApi(contents, systemInstruction=null) {
   const cfg = loadConfig();
   // Usa o modelo configurado ou o padrão estável
-  const model = cfg.model || 'gemini-1.5-flash-001';
+  const model = cfg.model || 'gemini-1.5-flash';
   
   const apiKey = cfg.claudeApiKey;
   if (!apiKey) throw new Error('API Key não configurada');
@@ -1033,6 +1028,9 @@ async function testGeminiConnection() {
     showNotif('error', '❌', 'Insira a chave da API do Gemini no campo acima para testar.');
     return;
   }
+
+  // Garante que usamos o modelo exato selecionado, sem alterações
+  const finalModel = model || 'gemini-1.5-flash';
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   
