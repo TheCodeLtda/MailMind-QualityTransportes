@@ -137,6 +137,7 @@
     <div class="filter-bar">
       <button class="filter-chip active" onclick="setFilter('all', this)">Todos</button>
       <button class="filter-chip" onclick="setFilter('unread', this)">Não lidos</button>
+      <button class="filter-chip" onclick="setFilter('high_importance', this)" style="color:var(--danger);">Alta Prioridade</button>
       <button class="filter-chip" onclick="setFilter('Trabalho', this)">Trabalho</button>
       <button class="filter-chip" onclick="setFilter('Financeiro', this)">Financeiro</button>
       <button class="filter-chip" onclick="setFilter('Marketing', this)">Marketing</button>
@@ -234,11 +235,9 @@
     <div class="config-row">
       <div>
         <div class="config-label">Modelo</div>
-        <div class="config-sub">Modelo Gemini a ser usado</div>
+        <div class="config-sub">Modelo de IA em uso para classificação e chat</div>
       </div>
-      <select class="config-input" id="configModel">
-        <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash</option>
-      </select>
+      <input type="text" class="config-input" value="gemini-2.5-flash" readonly style="background:transparent; border-color:transparent; text-align:right; font-family:var(--font-mono);"/>
     </div>
   </div>
 

@@ -165,6 +165,7 @@ function loadApp(cfg) {
   state.emails = DEMO_EMAILS;
   state.filteredEmails = [...state.emails];
   state.useOutlookFolders = cfg.useOutlookFolders === true;
+  state.chatHistory = JSON.parse(localStorage.getItem('mailmind_chat_history') || '[]');
 
   // Renderiza pastas imediatamente (com botões ···)
   renderSidebarFolders();
@@ -172,6 +173,7 @@ function loadApp(cfg) {
   renderEmailList();
   updateFolderCounts();
   updateUnreadBadge();
+  renderChatHistory();
 
   // Restaura token do sessionStorage (sobrevive F5 e fechar/abrir aba)
   if (restoreToken()) {
@@ -187,7 +189,7 @@ function populateConfigPanel() {
   let cfg={};
   try { cfg=JSON.parse(localStorage.getItem('mailmind_config')||'{}'); } catch {}
   if (!cfg.claudeApiKey && state.config?.claudeApiKey) cfg=state.config;
-  const fields={configApiKey:cfg.claudeApiKey||'',configModel:cfg.model||'gemini-2.5-flash',configClientId:cfg.clientId||'',configTenantId:cfg.tenantId||'',configRedirectUri:cfg.redirectUri||window.location.origin,configBatchSize:cfg.batchSize||5};
+  const fields={configApiKey:cfg.claudeApiKey||'',configClientId:cfg.clientId||'',configTenantId:cfg.tenantId||'',configRedirectUri:cfg.redirectUri||window.location.origin,configBatchSize:cfg.batchSize||5};
   Object.entries(fields).forEach(([id,val])=>{ const el=document.getElementById(id); if(el) el.value=val; });
   const ac=document.getElementById('autoClassify'); if(ac) ac.checked=cfg.autoClassify!==false;
   const of=document.getElementById('useOutlookFolders'); if(of) of.checked=cfg.useOutlookFolders===true;
@@ -195,7 +197,7 @@ function populateConfigPanel() {
 function saveConfig() {
   const cfg={
     claudeApiKey:document.getElementById('configApiKey').value.trim(),
-    model:document.getElementById('configModel').value,
+    model:'gemini-2.5-flash', // Modelo fixo
     clientId:document.getElementById('configClientId').value.trim(),
     tenantId:document.getElementById('configTenantId').value.trim()||'common',
     redirectUri:document.getElementById('configRedirectUri').value.trim()||window.location.origin,
@@ -1079,6 +1081,9 @@ async function classifyAllEmails() {
         const rule = state.rules.find(r => r.active && r.folder === folder && r.action && r.action !== 'none');
         if (rule) await executeRuleAction(email, rule);
         }
+        // Remove o e-mail da lista local para não reaparecer
+        state.emails = state.emails.filter(e => e.id !== email.id);
+        state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
         // Delay para respeitar limite da API gratuita (Rate Limit)
         await new Promise(r => setTimeout(r, 1500));
     } catch (e) {
@@ -1106,6 +1111,9 @@ async function classifySelected() {
     await moveEmail(email.id, folder);
     const rule = state.rules.find(r => r.active && r.folder === folder && r.action && r.action !== 'none');
     if (rule) await executeRuleAction(email, rule);
+    // Remove o e-mail da lista local
+    state.emails = state.emails.filter(e => e.id !== email.id);
+    state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
   }
   renderEmailList(); updateFolderCounts(); hideStatus();
   showNotif('success','✅',`E-mail classificado como: ${folder}`);
@@ -1368,7 +1376,9 @@ async function sendChat() {
     const reply=data.candidates?.[0]?.content?.parts?.[0]?.text||'Desculpe, não consegui processar.';
     removeTyping(typing); addChatMessage('assistant',reply);
     state.chatHistory.push({role:'user',text:msg},{role:'assistant',text:reply});
-    if(state.chatHistory.length>20) state.chatHistory=state.chatHistory.slice(-20);
+    // Salva histórico no localStorage
+    if(state.chatHistory.length > 20) state.chatHistory = state.chatHistory.slice(-20);
+    localStorage.setItem('mailmind_chat_history', JSON.stringify(state.chatHistory));
   } catch(e){removeTyping(typing);addChatMessage('assistant','Erro: '+e.message);}
 }
 function addChatMessage(role,text) {
@@ -1377,6 +1387,15 @@ function addChatMessage(role,text) {
   const now=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
   div.innerHTML=`<div class="msg-bubble">${formatText(text)}</div><div class="msg-time">${now}</div>`;
   msgs.appendChild(div); msgs.scrollTop=msgs.scrollHeight; return div;
+}
+function renderChatHistory() {
+  const chatContainer = document.getElementById('chatMessages');
+  if (!chatContainer) return;
+  // Se houver histórico, limpa a mensagem de boas-vindas e renderiza as salvas
+  if (state.chatHistory.length > 0) {
+      chatContainer.innerHTML = '';
+      state.chatHistory.forEach(msg => addChatMessage(msg.role, msg.text));
+  }
 }
 function addTyping() {
   const msgs=document.getElementById('chatMessages');
@@ -1608,6 +1627,7 @@ function applyFilters(){
   let emails=[...state.emails];
   if(state.currentFolder)emails=emails.filter(e=>e.folder===state.currentFolder);
   else if(state.currentFilter==='unread')emails=emails.filter(e=>e.unread);
+  else if(state.currentFilter==='high_importance')emails=emails.filter(e=>e.importance==='high');
   else if(['Trabalho','Financeiro','Marketing','Pessoal'].includes(state.currentFilter))emails=emails.filter(e=>e.folder===state.currentFilter);
   if(search)emails=emails.filter(e=>e.subject.toLowerCase().includes(search)||e.from.toLowerCase().includes(search)||e.preview.toLowerCase().includes(search));
   state.filteredEmails=emails;renderEmailList();
