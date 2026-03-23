@@ -6,7 +6,7 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   // Chave fornecida no prompt ou via ENV.
-  // CORREÇÃO: Verifica se a chave vinda do frontend é antiga (sk-...) e força a nova se necessário
+  // Verifica se a chave vinda do frontend é antiga (sk-...) e força a nova se necessário
   let apiKey = req.body.apiKey;
   if (!apiKey || apiKey.startsWith('sk-')) {
     apiKey = process.env.GEMINI_API_KEY || 'AIzaSyDKBvEJMYN1QrldN_2QhdESN1CHtyttme4';
