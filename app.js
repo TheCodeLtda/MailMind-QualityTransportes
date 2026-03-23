@@ -237,7 +237,7 @@ function saveConfig() {
     if (cfg.useOutlookFolders) loadOutlookFolders();
     else renderSidebarFolders();
   }
-  showNotif('success','✅','Configurações salvas!');
+  showNotif('success','✅','Configurações salvas e aplicadas com sucesso!');
 }
 function toggleVisibility(inputId,btn) {
   const input=document.getElementById(inputId);
@@ -476,35 +476,81 @@ function openFixedFolderMenu(event, name) {
 function menu_shareFolder(name, folderId) { document.getElementById('folderCtxMenu')?.remove(); document.getElementById('emailCtxMenu')?.remove(); setTimeout(() => openShareFolderModal(name, folderId||null), 10); }
 function menu_renameFixed(name)  { document.getElementById('folderCtxMenu')?.remove(); setTimeout(() => renameFixedFolder(name), 10); }
 
-function addFixedFolder() {
+async function addFixedFolder() {
   const name = prompt('Nome da nova pasta:');
   if (!name?.trim()) return;
   const n = name.trim();
   if (state.fixedFolders.find(f => f.name === n)) { showNotif('error','❌','Já existe uma pasta com esse nome'); return; }
+  
+  // Atualiza Local
   const colors = ['#7C6EFA','#5DCAA5','#EF9F27','#F0997B','#E24B4A','#4AACE2','#B26EFA'];
   state.fixedFolders.push({ name: n, color: colors[state.fixedFolders.length % colors.length] });
   saveFixedFolders();
   renderSidebarFolders();
-  showNotif('success','✅',`Pasta "${n}" criada!`);
+
+  // Sincroniza com Outlook
+  if (state.connected && state.accessToken) {
+    showStatus('Sincronizando pasta no Outlook...');
+    try {
+      await fetch('https://graph.microsoft.com/v1.0/me/mailFolders', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type':'application/json' },
+        body: JSON.stringify({ displayName: n }),
+      });
+      showNotif('success','✅',`Pasta "${n}" criada e sincronizada!`);
+    } catch(e) {
+      console.warn(e);
+      showNotif('warn','⚠️',`Pasta criada localmente. Erro no Outlook: ${e.message}`);
+    } finally { hideStatus(); }
+  } else {
+    showNotif('success','✅',`Pasta "${n}" criada (local)!`);
+  }
 }
 
-function renameFixedFolder(oldName) {
+async function renameFixedFolder(oldName) {
   const newName = prompt('Novo nome:', oldName);
   if (!newName?.trim() || newName.trim() === oldName) return;
   const n = newName.trim();
   const f = state.fixedFolders.find(f => f.name === oldName);
   if (!f) return;
+  
+  // Atualiza Local
   // Atualiza e-mails com a pasta antiga
   state.emails.forEach(e => { if (e.folder === oldName) e.folder = n; });
   f.name = n;
   saveFixedFolders();
   renderSidebarFolders();
   renderEmailList();
-  showNotif('success','✅',`Pasta renomeada para "${n}"!`);
+
+  // Sincroniza com Outlook
+  if (state.connected && state.accessToken) {
+    showStatus('Renomeando no Outlook...');
+    try {
+      const folderId = await getTargetFolderId(oldName);
+      if (folderId) {
+        await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/${folderId}`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type':'application/json' },
+          body: JSON.stringify({ displayName: n }),
+        });
+        // Limpa cache antigo e atualiza
+        state.folderCache[`FLAT_${oldName}`] = null;
+        state.folderCache[`FLAT_${n}`] = folderId;
+        showNotif('success','✅',`Pasta renomeada para "${n}" no Outlook!`);
+      }
+    } catch(e) {
+      console.warn(e);
+      showNotif('warn','⚠️',`Renomeado localmente. Erro no Outlook: ${e.message}`);
+    } finally { hideStatus(); }
+  } else {
+    showNotif('success','✅',`Pasta renomeada para "${n}"!`);
+  }
 }
 
-function deleteFixedFolder(name) {
+async function deleteFixedFolder(name) {
   if (!confirm(`Excluir a pasta "${name}"? Os e-mails serão movidos para "Outros".`)) return;
+  
+  // Atualiza Local
   state.fixedFolders = state.fixedFolders.filter(f => f.name !== name);
   // Move e-mails para Outros
   state.emails.forEach(e => { if (e.folder === name) { e.folder = 'Outros'; e.tag = ''; } });
@@ -512,7 +558,27 @@ function deleteFixedFolder(name) {
   renderSidebarFolders();
   renderEmailList();
   updateFolderCounts();
-  showNotif('success','✅',`Pasta "${name}" excluída!`);
+
+  // Sincroniza com Outlook
+  if (state.connected && state.accessToken) {
+    showStatus('Excluindo do Outlook...');
+    try {
+      const folderId = await getTargetFolderId(name);
+      if (folderId) {
+        await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/${folderId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${state.accessToken}` },
+        });
+        state.folderCache[`FLAT_${name}`] = null;
+        showNotif('success','✅',`Pasta "${name}" excluída do Outlook!`);
+      }
+    } catch(e) {
+      console.warn(e);
+      showNotif('warn','⚠️',`Excluída localmente. Erro no Outlook: ${e.message}`);
+    } finally { hideStatus(); }
+  } else {
+    showNotif('success','✅',`Pasta "${name}" excluída!`);
+  }
 }
 function openFolderMenu(folderId, folderName, btn) {
   document.getElementById('folderCtxMenu')?.remove();
@@ -2039,7 +2105,7 @@ async function checkNewEmails() {
   try {
     const filter = encodeURIComponent(`receivedDateTime gt ${newestDate}`);
     const res = await fetch(
-      `https://graph.microsoft.com/v1.0/me/messages?$top=20&$filter=${filter}` +
+      `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=20&$filter=${filter}` +
       `&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance` +
       `&$orderby=receivedDateTime desc`,
       { headers: {
