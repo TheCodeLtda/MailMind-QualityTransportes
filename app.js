@@ -533,8 +533,12 @@ async function renameFixedFolder(oldName) {
           body: JSON.stringify({ displayName: n }),
         });
         // Limpa cache antigo e atualiza
-        state.folderCache[`FLAT_${oldName}`] = null;
-        state.folderCache[`FLAT_${n}`] = folderId;
+        const cfg = loadConfig();
+        const useHierarchy = cfg.organizeInRoot !== false;
+        const prefix = useHierarchy ? 'ROOT_SUB_' : 'FLAT_';
+
+        state.folderCache[`${prefix}${oldName}`] = null;
+        state.folderCache[`${prefix}${n}`] = folderId;
         showNotif('success','✅',`Pasta renomeada para "${n}" no Outlook!`);
       }
     } catch(e) {
@@ -2131,6 +2135,12 @@ async function checkNewEmails() {
     updateFolderCounts();
     updateUnreadBadge();
     renderPagination();
+
+    // Dispara classificação automática se habilitado
+    const cfg = loadConfig();
+    if (cfg.autoClassify && toAdd.length > 0) {
+      classifyBatch(toAdd);
+    }
 
     const plural = toAdd.length > 1 ? 's' : '';
     showNotif('success', '📬', `${toAdd.length} novo${plural} e-mail${plural} recebido${plural}!`);
