@@ -1268,7 +1268,7 @@ async function classifyAllEmails() {
         state.emails = state.emails.filter(e => e.id !== email.id);
         state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
         // Delay para respeitar limite da API gratuita (Rate Limit)
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 4000));
     } catch (e) {
         console.error(`Erro ao classificar email ${i+1}:`, e);
         // Não interrompe o loop, apenas segue para o próximo
@@ -1305,7 +1305,7 @@ async function classifyBatch(emailsToProcess) {
       state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
       
       // Delay API
-      await new Promise(r => setTimeout(r, 1500));
+      await new Promise(r => setTimeout(r, 4000));
     } catch(e) { console.error('Erro auto-classify:', e); }
   }
   renderEmailList();
