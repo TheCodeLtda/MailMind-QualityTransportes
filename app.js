@@ -136,7 +136,7 @@ function saveSetup() {
   const clientId=document.getElementById('msClientId').value.trim();
   const tenantId=document.getElementById('msTenantId').value.trim()||'common';
   if (!key) { showNotif('error','❌','Insira sua chave da API'); return; }
-  const cfg={claudeApiKey:key,clientId,tenantId,redirectUri:window.location.origin,model:'gemini-1.5-flash',autoClassify:true,batchSize:20};
+  const cfg={claudeApiKey:key,clientId,tenantId,redirectUri:window.location.origin,model:'gemini-1.5-flash',autoClassify:true,batchSize:5};
   localStorage.setItem('mailmind_config',JSON.stringify(cfg));
   document.getElementById('setupScreen').classList.add('hidden');
   loadApp(cfg);
@@ -184,7 +184,7 @@ function populateConfigPanel() {
   let cfg={};
   try { cfg=JSON.parse(localStorage.getItem('mailmind_config')||'{}'); } catch {}
   if (!cfg.claudeApiKey && state.config?.claudeApiKey) cfg=state.config;
-  const fields={configApiKey:cfg.claudeApiKey||'',configClientId:cfg.clientId||'',configTenantId:cfg.tenantId||'',configRedirectUri:cfg.redirectUri||window.location.origin,configModel:cfg.model||'gemini-1.5-flash',configBatchSize:cfg.batchSize||20};
+  const fields={configApiKey:cfg.claudeApiKey||'',configClientId:cfg.clientId||'',configTenantId:cfg.tenantId||'',configRedirectUri:cfg.redirectUri||window.location.origin,configModel:cfg.model||'gemini-1.5-flash',configBatchSize:cfg.batchSize||5};
   Object.entries(fields).forEach(([id,val])=>{ const el=document.getElementById(id); if(el) el.value=val; });
   const ac=document.getElementById('autoClassify'); if(ac) ac.checked=cfg.autoClassify!==false;
   const of=document.getElementById('useOutlookFolders'); if(of) of.checked=cfg.useOutlookFolders===true;
@@ -862,7 +862,7 @@ async function loadSpecialFolder(folderKey) {
   } catch(e) { hideStatus(); showNotif('error','❌','Erro: '+e.message); }
 }
 
-const BASE_URL  = 'https://graph.microsoft.com/v1.0/me/messages'
+const BASE_URL  = 'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages'
   + `?$top=${PAGE_SIZE}`
   + '&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance'
   + '&$orderby=receivedDateTime desc';
@@ -1023,7 +1023,7 @@ async function classifyAllEmails() {
   const cfg=loadConfig();
   if(!cfg.claudeApiKey){showNotif('error','❌','Configure a chave da API');return;}
 
-  const toProcess=state.emails.slice(0,cfg.batchSize||20);
+  const toProcess=state.emails.slice(0,cfg.batchSize||5);
   const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
 
   const btn = document.querySelector('.classify-btn');
@@ -1042,6 +1042,8 @@ async function classifyAllEmails() {
         const rule = state.rules.find(r => r.active && r.folder === folder && r.action && r.action !== 'none');
         if (rule) await executeRuleAction(email, rule);
         }
+        // Delay para respeitar limite da API gratuita (Rate Limit)
+        await new Promise(r => setTimeout(r, 1500));
     } catch (e) {
         console.error(`Erro ao classificar email ${i+1}:`, e);
         // Não interrompe o loop, apenas segue para o próximo
