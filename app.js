@@ -1490,8 +1490,15 @@ function moveSelected(folder) {
   const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
   email.folder=folder; email.tag=tagMap[folder]||'';
   if(state.connected&&state.accessToken) moveEmail(email.id,folder);
-  applyFilters(); updateFolderCounts();
+  
+  // Remove visualmente da lista atual (pois foi movido de verdade)
+  state.emails = state.emails.filter(e => e.id !== email.id);
+  state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
   state.selectedEmail = null;
+  
+  renderEmailList(); 
+  updateFolderCounts();
+  
   document.getElementById('detailTab').innerHTML=`
     <div style="display:flex;align-items:center;justify-content:center;height:200px;flex-direction:column;gap:12px;">
       <div style="font-size:48px;opacity:0.2">📭</div>
@@ -1758,10 +1765,26 @@ function setFilter(filter,btn){
 
   applyFilters();
 }
-function filterByFolder(folder) {
+async function filterByFolder(folder) {
   // Garante que estamos na view de emails
   if (state.currentView !== 'emails') switchView('emails', null);
 
+  // Se conectado, tenta buscar da pasta real no Outlook (Sincronização)
+  if (state.connected && state.accessToken) {
+    try {
+      showStatus(`Sincronizando ${folder}...`);
+      const fid = await getTargetFolderId(folder);
+      if (fid) {
+        await fetchEmailsByFolder(fid, folder);
+        return; // Sincronização feita, não usa filtro local
+      }
+    } catch(e) {
+      console.warn('Fallback local para folder:', e);
+      hideStatus();
+    }
+  }
+
+  // Fallback: modo offline ou erro na API -> filtro local
   state.currentFolder=folder; state.currentFilter='all';
   document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
   document.getElementById('panelTitle').textContent=folder;
@@ -2004,6 +2027,10 @@ function stopPolling() {
 
 async function checkNewEmails() {
   if (!state.accessToken || !state.connected) return;
+
+  // Evita polling se estiver vendo uma pasta específica que não seja Inbox
+  // para não misturar e-mails novos da entrada dentro da pasta "Financeiro", por exemplo.
+  if (state.currentFolder && state.currentFolder !== 'Caixa de Entrada') return;
 
   // Pega o ID do e-mail mais recente que já temos
   const newestDate = state.emails.length > 0 ? state.emails[0].date : null;
