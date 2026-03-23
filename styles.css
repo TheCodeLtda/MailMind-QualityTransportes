@@ -81,7 +81,7 @@ body {
 
 .nav-item {
   display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px;
-  cursor: pointer; font-size: 13px; font-weight: 500; color: var(--text2);
+  cursor: pointer; font-size: 14px; font-weight: 500; color: var(--text2);
   transition: all 0.15s; border: none; background: none; width: 100%; text-align: left;
 }
 .nav-item:hover { background: var(--surface2); color: var(--text); }
@@ -149,7 +149,7 @@ body {
 }
 .filter-bar::-webkit-scrollbar { display: none; }
 .filter-chip {
-  padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700;
+  padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 700;
   cursor: pointer; border: 1px solid var(--border2); color: var(--text2);
   transition: all 0.15s; white-space: nowrap; background: none;
   text-transform: uppercase; letter-spacing: 0.5px;
@@ -183,11 +183,11 @@ body {
 .email-content-col { flex: 1; min-width: 0; }
 
 .email-sender {
-  font-size: 13px; font-weight: 500; color: var(--text2);
+  font-size: 13px; font-weight: 600; color: var(--text2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .email-subject {
-  font-size: 13px; font-weight: 400; color: var(--text); margin: 3px 0;
+  font-size: 14px; font-weight: 500; color: var(--text); margin: 3px 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .email-preview {
@@ -229,7 +229,7 @@ body {
   background: var(--surface); padding: 0 24px; flex-shrink: 0;
 }
 .tab {
-  padding: 13px 18px; font-size: 11px; font-weight: 700;
+  padding: 13px 18px; font-size: 13px; font-weight: 700;
   color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent;
   transition: all 0.15s; text-transform: uppercase; letter-spacing: 0.8px;
 }
@@ -253,13 +253,13 @@ body {
   font-size: 13px; font-weight: 700; flex-shrink: 0; color: #fff; font-family: var(--font-head);
 }
 .from-info { flex: 1; }
-.from-name { font-size: 14px; font-weight: 600; }
-.from-email { font-size: 11px; color: var(--text3); }
-.detail-date { font-size: 11px; color: var(--text3); }
+.from-name { font-size: 15px; font-weight: 600; }
+.from-email { font-size: 12px; color: var(--text3); }
+.detail-date { font-size: 12px; color: var(--text3); }
 .detail-actions { display: flex; gap: 6px; margin-top: 14px; flex-wrap: wrap; }
 
 .action-btn {
-  padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 700;
+  padding: 7px 13px; border-radius: 6px; font-size: 12px; font-weight: 700;
   cursor: pointer; border: 1px solid var(--border2); background: var(--surface2);
   color: var(--text2); transition: all 0.15s; font-family: var(--font-body);
   display: flex; align-items: center; gap: 5px;
@@ -362,7 +362,7 @@ body {
 .msg { max-width: 80%; }
 .msg.user     { align-self: flex-end; }
 .msg.assistant{ align-self: flex-start; }
-.msg-bubble { padding: 14px 18px; border-radius: 16px; font-size: 14px; line-height: 1.7; }
+.msg-bubble { padding: 14px 18px; border-radius: 16px; font-size: 15px; line-height: 1.75; }
 .msg.user      .msg-bubble {
   background: linear-gradient(135deg, var(--accent), var(--accent-h));
   color: #fff; border-radius: 16px 16px 4px 16px;
@@ -387,11 +387,12 @@ body {
 @keyframes typing { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-6px)} }
 
 .chat-input-area {
-  padding: 20px 32px; border-top: 1px solid var(--border); background: var(--surface);
+  padding: 16px 24px; border-top: 1px solid var(--border); background: var(--surface);
+  flex-shrink: 0;
 }
 .suggestions { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
 .suggestion {
-  padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 400;
+  padding: 7px 14px; border-radius: 20px; font-size: 13px; font-weight: 500;
   border: 1px solid var(--border2); color: var(--text2); cursor: pointer;
   transition: all 0.15s; background: none; font-family: var(--font-body);
 }
@@ -403,11 +404,11 @@ body {
 .chat-textarea {
   flex: 1; background: var(--surface2); border: 1px solid var(--border2);
   border-radius: 12px; padding: 12px 16px; color: var(--text);
-  font-family: var(--font-body); font-size: 14px; resize: none; outline: none;
+  font-family: var(--font-body); font-size: 15px; resize: none; outline: none;
   min-height: 48px; max-height: 140px; transition: border-color 0.15s; line-height: 1.5;
 }
 .chat-textarea:focus { border-color: var(--accent); }
-.chat-textarea::placeholder { color: var(--text3); }
+.chat-textarea::placeholder { color: var(--text3); font-size: 14px; }
 
 .send-btn {
   width: 42px; height: 42px;
@@ -566,23 +567,24 @@ input:checked + .toggle-slider:before { transform: translateX(16px); }
    MODAL
    ============================================================ */
 .modal-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 200;
+  position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 300;
   display: flex; align-items: center; justify-content: center;
   backdrop-filter: blur(4px); opacity: 0; pointer-events: none; transition: opacity 0.2s;
 }
 .modal-overlay.open { opacity: 1; pointer-events: all; }
 .modal {
   background: var(--surface); border: 1px solid var(--border2); border-radius: 14px;
-  padding: 28px; width: 460px; max-width: 90vw;
-  transform: scale(0.95); transition: transform 0.2s;
-  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+  padding: 28px; width: 500px; max-width: calc(100vw - 300px);
+  transform: scale(0.97); transition: transform 0.2s;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+  max-height: 90vh; overflow-y: auto;
 }
 .modal-overlay.open .modal { transform: scale(1); }
-.modal-title { font-family: var(--font-head); font-size: 20px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
-.modal-sub { font-size: 12px; color: var(--text2); margin-bottom: 20px; }
+.modal-title { font-family: var(--font-head); font-size: 22px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+.modal-sub { font-size: 13px; color: var(--text2); margin-bottom: 20px; }
 
 .form-label {
-  font-size: 10px; font-weight: 700; color: var(--text3);
+  font-size: 11px; font-weight: 700; color: var(--text3);
   margin-bottom: 6px; display: block; text-transform: uppercase; letter-spacing: 1px;
 }
 .btn-cancel {

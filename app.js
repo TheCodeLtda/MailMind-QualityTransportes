@@ -1589,7 +1589,7 @@ async function sendChat() {
     const body=e.bodyText||stripHtml(e.bodyHtml||'')||e.preview||'';
     return `[${e.dateFormatted||e.date}] De: ${e.fromName} <${e.from}> | Pasta: ${e.folder}\nAssunto: ${e.subject}\nCorpo: ${body.substring(0,300)}`;
   }).join('\n\n---\n\n');
-  const systemPrompt=`Você é um assistente inteligente de e-mails do Outlook. Responda sempre em português brasileiro de forma clara.\n\nE-mails disponíveis (${state.emails.length}):\n${emailsContext}`;
+  const systemPrompt=`Você é um assistente de e-mails objetivo e direto. Responda SEMPRE em português brasileiro. Seja CONCISO: máximo 3-5 linhas por resposta, sem introduções longas, sem repetir a pergunta. Vá direto ao ponto com informações práticas.\n\nE-mails disponíveis (${state.emails.length}):\n${emailsContext}`;
   
   // Mapeia histórico para formato Gemini (role: 'user' | 'model')
   // Filtra mensagens vazias para evitar erro 400
@@ -1643,7 +1643,7 @@ async function summarizeFolder(folderName, folderId) {
       `- [${formatDate(e.receivedDateTime)}] De: ${e.from?.emailAddress?.name || 'Desconhecido'}: ${e.subject} | ${e.bodyPreview}`
     ).join('\n');
 
-    const prompt = `Analise os seguintes e-mails da pasta "${folderName}" e crie um resumo executivo em tópicos. Identifique os temas principais, decisões tomadas e se há pendências urgentes.\n\n${context}`;
+    const prompt = `Resuma em 3-5 tópicos curtos os e-mails da pasta "${folderName}". Destaque apenas o essencial: tema principal e pendências urgentes. Seja direto e breve.\n\n${context}`;
     
     const data = await geminiApi([{ role: 'user', parts: [{ text: prompt }] }]);
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Sem resposta da IA.';
