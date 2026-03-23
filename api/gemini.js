@@ -19,9 +19,11 @@ module.exports = async function handler(req, res) {
   try {
     let { contents, systemInstruction, model } = req.body;
 
-    // Usa o padrão estável se não especificado. Remove sufixos '-latest' que podem causar erro.
-    if (!model) model = 'gemini-1.5-flash';
-    model = model.replace('-latest', ''); 
+    // CORREÇÃO DEFINITIVA: Mapeamento para versões exatas aceitas pela v1beta
+    // Se receber o nome curto, converte para a versão 'latest' ou '001' que a API exige
+    if (!model || model === 'gemini-1.5-flash') model = 'gemini-1.5-flash-latest';
+    if (model === 'gemini-1.5-pro') model = 'gemini-1.5-pro-latest';
+    if (model === 'gemini-1.0-pro') model = 'gemini-1.0-pro-latest';
 
     // Garante que o nome do modelo não tenha o prefixo 'models/' duplicado
     const cleanModel = model.replace(/^models\//, '');
