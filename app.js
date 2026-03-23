@@ -101,9 +101,9 @@ const DEFAULT_RULES = [
 function loadConfig() {
   try { 
     const cfg = JSON.parse(localStorage.getItem('mailmind_config')||'{}');
-    // Migração automática: Corrige modelo antigo 'gemini-1.5-flash' para 'gemini-1.5-flash-latest'
-    if (cfg.model === 'gemini-1.5-flash') {
-      cfg.model = 'gemini-1.5-flash-latest';
+    // Migração automática: Garante uso do modelo padrão estável sem sufixos problemáticos
+    if (cfg.model && cfg.model.includes('-latest')) {
+      cfg.model = 'gemini-1.5-flash';
       localStorage.setItem('mailmind_config', JSON.stringify(cfg));
     }
     return cfg;
@@ -144,7 +144,7 @@ function saveSetup() {
   const clientId=document.getElementById('msClientId').value.trim();
   const tenantId=document.getElementById('msTenantId').value.trim()||'common';
   if (!key) { showNotif('error','❌','Insira sua chave da API'); return; }
-  const cfg={claudeApiKey:key,clientId,tenantId,redirectUri:window.location.origin,model:'gemini-1.5-flash-latest',autoClassify:false,batchSize:5};
+  const cfg={claudeApiKey:key,clientId,tenantId,redirectUri:window.location.origin,model:'gemini-1.5-flash',autoClassify:false,batchSize:5};
   localStorage.setItem('mailmind_config',JSON.stringify(cfg));
   document.getElementById('setupScreen').classList.add('hidden');
   loadApp(cfg);
@@ -192,7 +192,7 @@ function populateConfigPanel() {
   let cfg={};
   try { cfg=JSON.parse(localStorage.getItem('mailmind_config')||'{}'); } catch {}
   if (!cfg.claudeApiKey && state.config?.claudeApiKey) cfg=state.config;
-  const fields={configApiKey:cfg.claudeApiKey||'',configClientId:cfg.clientId||'',configTenantId:cfg.tenantId||'',configRedirectUri:cfg.redirectUri||window.location.origin,configModel:cfg.model||'gemini-1.5-flash-latest',configBatchSize:cfg.batchSize||5};
+  const fields={configApiKey:cfg.claudeApiKey||'',configClientId:cfg.clientId||'',configTenantId:cfg.tenantId||'',configRedirectUri:cfg.redirectUri||window.location.origin,configModel:cfg.model||'gemini-1.5-flash',configBatchSize:cfg.batchSize||5};
   Object.entries(fields).forEach(([id,val])=>{ const el=document.getElementById(id); if(el) el.value=val; });
   const ac=document.getElementById('autoClassify'); if(ac) ac.checked=cfg.autoClassify!==false;
   const of=document.getElementById('useOutlookFolders'); if(of) of.checked=cfg.useOutlookFolders===true;
@@ -989,7 +989,7 @@ async function moveEmail(emailId,folderName) {
 // ============================================================
 async function geminiApi(contents, systemInstruction=null) {
   const cfg = loadConfig();
-  const model = cfg.model || 'gemini-1.5-flash-latest';
+  const model = cfg.model || 'gemini-1.5-flash';
   
   // Adapta corpo para API do Gemini
   const body = { 
