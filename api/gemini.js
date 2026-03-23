@@ -17,7 +17,11 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { contents, systemInstruction, model = 'gemini-1.5-flash-latest' } = req.body;
+    let { contents, systemInstruction, model } = req.body;
+
+    // CORREÇÃO: Mapeia nomes de modelos curtos/antigos para versões específicas suportadas
+    if (!model || model === 'gemini-1.5-flash') model = 'gemini-1.5-flash-latest';
+    if (model === 'gemini-1.5-pro') model = 'gemini-1.5-pro-latest';
 
     // Garante que o nome do modelo não tenha o prefixo 'models/' duplicado
     const cleanModel = model.replace(/^models\//, '');

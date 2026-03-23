@@ -99,7 +99,15 @@ const DEFAULT_RULES = [
 // CONFIG — localStorage helpers
 // ============================================================
 function loadConfig() {
-  try { return JSON.parse(localStorage.getItem('mailmind_config')||'{}'); } catch { return {}; }
+  try { 
+    const cfg = JSON.parse(localStorage.getItem('mailmind_config')||'{}');
+    // Migração automática: Corrige modelo antigo 'gemini-1.5-flash' para 'gemini-1.5-flash-latest'
+    if (cfg.model === 'gemini-1.5-flash') {
+      cfg.model = 'gemini-1.5-flash-latest';
+      localStorage.setItem('mailmind_config', JSON.stringify(cfg));
+    }
+    return cfg;
+  } catch { return {}; }
 }
 
 // ============================================================
