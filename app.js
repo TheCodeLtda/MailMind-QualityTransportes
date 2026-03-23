@@ -101,13 +101,11 @@ const DEFAULT_RULES = [
 function loadConfig() {
   try { 
     const cfg = JSON.parse(localStorage.getItem('mailmind_config')||'{}');
-    // CORREÇÃO: Remove o sufixo '-latest' que está causando erro 404 na API
-    if (cfg.model && cfg.model.includes('-latest')) {
-      cfg.model = cfg.model.replace('-latest', '');
+    // CORREÇÃO DEFINITIVA: Força o uso da versão específica '001' se estiver usando alias ou latest
+    if (!cfg.model || cfg.model === 'gemini-1.5-flash' || cfg.model.includes('-latest')) {
+      cfg.model = 'gemini-1.5-flash-001';
       localStorage.setItem('mailmind_config', JSON.stringify(cfg));
     }
-    // Garante um padrão válido se estiver vazio
-    if (!cfg.model) cfg.model = 'gemini-1.5-flash';
     return cfg;
   } catch { return {}; }
 }
@@ -992,7 +990,7 @@ async function moveEmail(emailId,folderName) {
 async function geminiApi(contents, systemInstruction=null) {
   const cfg = loadConfig();
   // Usa o modelo configurado ou o padrão estável
-  const model = cfg.model || 'gemini-1.5-flash';
+  const model = cfg.model || 'gemini-1.5-flash-001';
   
   const apiKey = cfg.claudeApiKey;
   if (!apiKey) throw new Error('API Key não configurada');
