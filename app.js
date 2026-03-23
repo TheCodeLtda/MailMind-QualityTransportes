@@ -136,7 +136,7 @@ function saveSetup() {
   const clientId=document.getElementById('msClientId').value.trim();
   const tenantId=document.getElementById('msTenantId').value.trim()||'common';
   if (!key) { showNotif('error','❌','Insira sua chave da API'); return; }
-  const cfg={claudeApiKey:key,clientId,tenantId,redirectUri:window.location.origin,model:'gemini-1.5-flash',autoClassify:true,batchSize:5};
+  const cfg={claudeApiKey:key,clientId,tenantId,redirectUri:window.location.origin,model:'gemini-1.5-flash',autoClassify:false,batchSize:5};
   localStorage.setItem('mailmind_config',JSON.stringify(cfg));
   document.getElementById('setupScreen').classList.add('hidden');
   loadApp(cfg);
@@ -898,7 +898,7 @@ async function fetchEmails(url) {
     renderPagination();
     hideStatus();
     showNotif('success','✅',`${state.emails.length} e-mails carregados — página ${state.page.current}`);
-    if(!url && loadConfig().autoClassify!==false) classifyAllEmails();
+    // Classificação automática removida conforme solicitado
   } catch(e) { hideStatus(); showNotif('error','❌','Erro ao carregar e-mails: '+e.message); }
 }
 
