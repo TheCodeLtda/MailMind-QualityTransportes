@@ -987,39 +987,34 @@ async function moveEmail(emailId,folderName) {
 // ============================================================
 async function geminiApi(contents, systemInstruction=null) {
   const cfg = loadConfig();
-  const model = cfg.model || 'gemini-1.5-flash';
+  // Garante o modelo padrão e remove sufixos que possam quebrar a URL direta
+  let model = cfg.model || 'gemini-1.5-flash';
+  if (model.includes('-latest')) model = 'gemini-1.5-flash';
   
-  // Adapta corpo para API do Gemini
-  const body = { 
-    model, 
-    apiKey: cfg.claudeApiKey, // Usamos o mesmo campo no config mas passamos como apiKey
-    contents: contents 
-  };
+  const apiKey = cfg.claudeApiKey;
+  if (!apiKey) throw new Error('API Key não configurada');
+
+  // Monta a URL direta do Google
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   
+  const body = { contents };
   if (systemInstruction) {
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
 
-  const res = await fetch('/api/gemini', {
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
 
-  const text = await res.text();
-  try {
-    const data = JSON.parse(text);
-    if (!res.ok) {
-      throw new Error(data?.error?.message || data?.error || `HTTP ${res.status}`);
-    }
-    return data;
-  } catch(e) {
-    if (e.message.includes('HTTP')) throw e;
-    if (res.status === 401 || res.status === 403) throw new Error('Chave da API inválida');
-    if (res.status === 404) throw new Error('Proxy /api/gemini não encontrado');
-    if (res.status === 500) throw new Error('Erro no servidor ou na API do Google');
-    throw new Error(`Resposta inesperada do servidor (${res.status})`);
+  const data = await res.json();
+  
+  if (!res.ok) {
+    throw new Error(data.error?.message || `Erro API Google: ${res.status}`);
   }
+  
+  return data;
 }
 
 // ============================================================
