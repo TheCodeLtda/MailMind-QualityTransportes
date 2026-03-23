@@ -215,7 +215,6 @@ function populateConfigPanel() {
   Object.entries(fields).forEach(([id,val])=>{ const el=document.getElementById(id); if(el) el.value=val; });
   const ac=document.getElementById('autoClassify'); if(ac) ac.checked=cfg.autoClassify!==false;
   const of=document.getElementById('useOutlookFolders'); if(of) of.checked=cfg.useOutlookFolders===true;
-  const or=document.getElementById('organizeInRoot'); if(or) or.checked=cfg.organizeInRoot!==false;
 }
 function saveConfig() {
   const cfg={
@@ -225,7 +224,7 @@ function saveConfig() {
     tenantId:document.getElementById('configTenantId').value.trim()||'common',
     redirectUri:document.getElementById('configRedirectUri').value.trim()||window.location.origin,
     autoClassify:document.getElementById('autoClassify').checked,
-    organizeInRoot:document.getElementById('organizeInRoot').checked,
+    organizeInRoot:true, // Padrão: sempre organizar em subpastas de "MailMind"
     batchSize:parseInt(document.getElementById('configBatchSize').value)||20,
     useOutlookFolders:document.getElementById('useOutlookFolders')?.checked||false,
   };
