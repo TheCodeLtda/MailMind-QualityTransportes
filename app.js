@@ -131,11 +131,12 @@ function setupNext(currentStep) {
   } else if (currentStep===3) {
     const clientId=document.getElementById('msClientId').value.trim();
     const createNow = document.getElementById('setupCreateFoldersNow').checked;
+    const autoClassify = document.getElementById('setupAutoClassify').checked;
     document.getElementById('setupSummary').innerHTML=`
       <div class="summary-row"><span>Chave Gemini</span><span>••••••••••••</span></div>
       <div class="summary-row"><span>Client ID</span><span>${escHtml(clientId.substring(0,8))}...</span></div>
-      <div class="summary-row"><span>Organização</span><span>MailMind > Subpastas</span></div>
-      <div class="summary-row"><span>Criar pastas</span><span>${createNow ? 'Ao conectar' : 'Sob demanda'}</span></div>`;
+      <div class="summary-row"><span>Auto-Classif.</span><span>${autoClassify ? 'Ativado' : 'Manual'}</span></div>
+      <div class="summary-row"><span>Pastas</span><span>${createNow ? 'Criar Agora' : 'Sob Demanda'}</span></div>`;
     showSetupStep(4);
   }
 }
@@ -145,6 +146,7 @@ function saveSetup() {
   const clientId=document.getElementById('msClientId').value.trim();
   const tenantId=document.getElementById('msTenantId').value.trim()||'common';
   const createFoldersNow = document.getElementById('setupCreateFoldersNow').checked;
+  const autoClassify = document.getElementById('setupAutoClassify').checked;
 
   if (!key) { showNotif('error','❌','Insira sua chave da API'); return; }
   
@@ -154,7 +156,7 @@ function saveSetup() {
     tenantId,
     redirectUri:window.location.origin,
     model:'gemini-2.5-flash',
-    autoClassify: false, // Será configurado depois
+    autoClassify: autoClassify,
     organizeInRoot: true, // Padrão forçado para manter a lógica MailMind > Subpastas
     createFoldersNow: createFoldersNow, // Flag temporária para o primeiro login
     batchSize:5, 
@@ -1207,6 +1209,36 @@ async function classifyAllEmails() {
   renderEmailList(); updateFolderCounts(); hideStatus();
   if (btn) btn.textContent = originalText;
   showNotif('success','✅',`${toProcess.length} e-mails classificados!`);
+}
+
+// Função auxiliar para classificar um lote específico de e-mails (usado no auto-classify)
+async function classifyBatch(emailsToProcess) {
+  const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
+  showStatus(`Auto-classificando ${emailsToProcess.length} novo(s) e-mail(s)...`);
+  
+  for(const email of emailsToProcess) {
+    try {
+      const folder = await classifyEmail(email);
+      email.folder = folder; 
+      email.tag = tagMap[folder]||'';
+      
+      if(state.connected && state.accessToken) {
+        await moveEmail(email.id, folder);
+        // Executa regra associada
+        const rule = state.rules.find(r => r.active && r.folder === folder && r.action && r.action !== 'none');
+        if (rule) await executeRuleAction(email, rule);
+      }
+
+      // Remove da lista visual local pois foi movido para pasta
+      state.emails = state.emails.filter(e => e.id !== email.id);
+      state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
+      
+      // Delay API
+      await new Promise(r => setTimeout(r, 1500));
+    } catch(e) { console.error('Erro auto-classify:', e); }
+  }
+  renderEmailList();
+  hideStatus();
 }
 
 async function classifySelected() {

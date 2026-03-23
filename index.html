@@ -92,6 +92,20 @@
         </div>
       </div>
 
+      <!-- Opção de Auto Classificação -->
+      <div class="setup-input-group" style="background:var(--surface2); border:1px solid var(--border2); padding:16px; border-radius:10px; margin-top: 16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <label class="config-label" style="font-size:14px; color:var(--text);">Classificar novos e-mails automaticamente?</label>
+          <label class="rule-toggle">
+            <input type="checkbox" id="setupAutoClassify" checked/>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setup-hint" style="margin-bottom:0;">
+          Se marcado, a IA analisará e moverá novos e-mails para as pastas corretas assim que eles chegarem.
+        </div>
+      </div>
+
       <div class="setup-btn-row" style="margin-top:24px;">
         <button class="setup-btn-back" onclick="setupBack(3)">← Voltar</button>
         <button class="setup-btn" onclick="setupNext(3)">Próximo →</button>
