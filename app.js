@@ -187,7 +187,7 @@ function populateConfigPanel() {
   let cfg={};
   try { cfg=JSON.parse(localStorage.getItem('mailmind_config')||'{}'); } catch {}
   if (!cfg.claudeApiKey && state.config?.claudeApiKey) cfg=state.config;
-  const fields={configApiKey:cfg.claudeApiKey||'',configClientId:cfg.clientId||'',configTenantId:cfg.tenantId||'',configRedirectUri:cfg.redirectUri||window.location.origin,configModel:cfg.model||'gemini-2.5-flash',configBatchSize:cfg.batchSize||5};
+  const fields={configApiKey:cfg.claudeApiKey||'',configClientId:cfg.clientId||'',configTenantId:cfg.tenantId||'',configRedirectUri:cfg.redirectUri||window.location.origin,configBatchSize:cfg.batchSize||5};
   Object.entries(fields).forEach(([id,val])=>{ const el=document.getElementById(id); if(el) el.value=val; });
   const ac=document.getElementById('autoClassify'); if(ac) ac.checked=cfg.autoClassify!==false;
   const of=document.getElementById('useOutlookFolders'); if(of) of.checked=cfg.useOutlookFolders===true;
@@ -195,7 +195,7 @@ function populateConfigPanel() {
 function saveConfig() {
   const cfg={
     claudeApiKey:document.getElementById('configApiKey').value.trim(),
-    model:document.getElementById('configModel').value,
+    model:'gemini-2.5-flash',
     clientId:document.getElementById('configClientId').value.trim(),
     tenantId:document.getElementById('configTenantId').value.trim()||'common',
     redirectUri:document.getElementById('configRedirectUri').value.trim()||window.location.origin,
@@ -984,8 +984,8 @@ async function moveEmail(emailId,folderName) {
 // ============================================================
 async function geminiApi(contents, systemInstruction=null) {
   const cfg = loadConfig();
-  // Usa o modelo configurado ou o padrão estável
-  const model = cfg.model || 'gemini-2.5-flash';
+  // Modelo fixo conforme solicitado
+  const model = 'gemini-2.5-flash';
   
   const apiKey = cfg.claudeApiKey;
   if (!apiKey) throw new Error('API Key não configurada');
@@ -1021,7 +1021,7 @@ async function testGeminiConnection() {
   
   // Pega os valores diretamente dos campos de configuração para o teste
   const apiKey = document.getElementById('configApiKey')?.value.trim();
-  let model = document.getElementById('configModel')?.value.trim();
+  const model = 'gemini-2.5-flash';
 
   if (!apiKey) {
     hideStatus();
@@ -1029,10 +1029,7 @@ async function testGeminiConnection() {
     return;
   }
 
-  // Garante que usamos o modelo exato selecionado, sem alterações
-  const finalModel = model || 'gemini-2.5-flash';
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${finalModel}:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   
   const payload = {
     contents: [{ role: 'user', parts: [{ text: 'Olá! Responda apenas "OK" se estiver funcionando.' }] }]
