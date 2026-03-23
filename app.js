@@ -101,12 +101,13 @@ const DEFAULT_RULES = [
 function loadConfig() {
   try { 
     const cfg = JSON.parse(localStorage.getItem('mailmind_config')||'{}');
-    // Migração automática: Garante uso do modelo padrão estável sem sufixos problemáticos
-    // Força a atualização se o modelo salvo for a versão antiga/curta que causa erro 404
-    if (!cfg.model || cfg.model === 'gemini-1.5-flash') {
-      cfg.model = 'gemini-1.5-flash-latest';
+    // CORREÇÃO: Remove o sufixo '-latest' que está causando erro 404 na API
+    if (cfg.model && cfg.model.includes('-latest')) {
+      cfg.model = cfg.model.replace('-latest', '');
       localStorage.setItem('mailmind_config', JSON.stringify(cfg));
     }
+    // Garante um padrão válido se estiver vazio
+    if (!cfg.model) cfg.model = 'gemini-1.5-flash';
     return cfg;
   } catch { return {}; }
 }
@@ -990,12 +991,8 @@ async function moveEmail(emailId,folderName) {
 // ============================================================
 async function geminiApi(contents, systemInstruction=null) {
   const cfg = loadConfig();
-  // Garante o modelo padrão correto (API v1beta exige sufixo -latest ou -001)
-  let model = cfg.model || 'gemini-1.5-flash-latest';
-  
-  // CORREÇÃO DE SEGURANÇA: Se por algum motivo ainda vier sem o sufixo, forçamos aqui
-  if (model === 'gemini-1.5-flash') model = 'gemini-1.5-flash-latest';
-  if (model === 'gemini-1.5-pro') model = 'gemini-1.5-pro-latest';
+  // Usa o modelo configurado ou o padrão estável
+  const model = cfg.model || 'gemini-1.5-flash';
   
   const apiKey = cfg.claudeApiKey;
   if (!apiKey) throw new Error('API Key não configurada');
@@ -1038,10 +1035,6 @@ async function testGeminiConnection() {
     showNotif('error', '❌', 'Insira a chave da API do Gemini no campo acima para testar.');
     return;
   }
-
-  // Garante que o modelo tem o sufixo correto, como fazemos na função principal
-  if (model === 'gemini-1.5-flash') model = 'gemini-1.5-flash-latest';
-  if (model === 'gemini-1.5-pro') model = 'gemini-1.5-pro-latest';
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   
