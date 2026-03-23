@@ -75,6 +75,7 @@ const state = {
   page: { current:1, nextLink:null, prevLinks:[], total:null, pageSize:50 },
   outlookFolders: [],
   useOutlookFolders: false,
+  folderCache: {}, // Cache de IDs de pastas para performance
   fixedFolders: null,
 };
 
@@ -109,12 +110,14 @@ function loadConfig() {
 // SETUP WIZARD
 // ============================================================
 function showSetupStep(step) {
-  [1,2,3].forEach(n => {
+  [1,2,3,4].forEach(n => {
     document.getElementById('stepPanel'+n)?.classList.toggle('active', n===step);
     const dot=document.getElementById('dot'+n);
     if (dot) { dot.classList.toggle('active',n<=step); dot.classList.toggle('done',n<step); }
   });
-  document.getElementById('setupProgressFill').style.width = (step===1?33:step===2?66:100)+'%';
+  // Ajuste visual da barra de progresso para 4 passos
+  const percentages = {1: '25%', 2: '50%', 3: '75%', 4: '100%'};
+  document.getElementById('setupProgressFill').style.width = percentages[step];
 }
 function setupNext(currentStep) {
   if (currentStep===1) {
@@ -124,13 +127,16 @@ function setupNext(currentStep) {
   } else if (currentStep===2) {
     const clientId=document.getElementById('msClientId').value.trim();
     if (!clientId) { showNotif('error','❌','Insira o Client ID do Azure'); return; }
-    const tenantId=document.getElementById('msTenantId').value.trim()||'common';
+    showSetupStep(3);
+  } else if (currentStep===3) {
+    const clientId=document.getElementById('msClientId').value.trim();
+    const createNow = document.getElementById('setupCreateFoldersNow').checked;
     document.getElementById('setupSummary').innerHTML=`
       <div class="summary-row"><span>Chave Gemini</span><span>••••••••••••</span></div>
       <div class="summary-row"><span>Client ID</span><span>${escHtml(clientId.substring(0,8))}...</span></div>
-      <div class="summary-row"><span>Tenant ID</span><span>${escHtml(tenantId)}</span></div>
-      <div class="summary-row"><span>Redirect URI</span><span>${escHtml(window.location.origin)}</span></div>`;
-    showSetupStep(3);
+      <div class="summary-row"><span>Organização</span><span>MailMind > Subpastas</span></div>
+      <div class="summary-row"><span>Criar pastas</span><span>${createNow ? 'Ao conectar' : 'Sob demanda'}</span></div>`;
+    showSetupStep(4);
   }
 }
 function setupBack(currentStep) { showSetupStep(currentStep-1); }
@@ -138,8 +144,22 @@ function saveSetup() {
   const key=document.getElementById('claudeApiKey').value.trim();
   const clientId=document.getElementById('msClientId').value.trim();
   const tenantId=document.getElementById('msTenantId').value.trim()||'common';
+  const createFoldersNow = document.getElementById('setupCreateFoldersNow').checked;
+
   if (!key) { showNotif('error','❌','Insira sua chave da API'); return; }
-  const cfg={claudeApiKey:key,clientId,tenantId,redirectUri:window.location.origin,model:'gemini-2.5-flash',autoClassify:false,batchSize:5, useOutlookFolders:false};
+  
+  const cfg={
+    claudeApiKey:key,
+    clientId,
+    tenantId,
+    redirectUri:window.location.origin,
+    model:'gemini-2.5-flash',
+    autoClassify: false, // Será configurado depois
+    organizeInRoot: true, // Padrão forçado para manter a lógica MailMind > Subpastas
+    createFoldersNow: createFoldersNow, // Flag temporária para o primeiro login
+    batchSize:5, 
+    useOutlookFolders:false
+  };
   localStorage.setItem('mailmind_config',JSON.stringify(cfg));
   document.getElementById('setupScreen').classList.add('hidden');
   loadApp(cfg);
@@ -193,6 +213,7 @@ function populateConfigPanel() {
   Object.entries(fields).forEach(([id,val])=>{ const el=document.getElementById(id); if(el) el.value=val; });
   const ac=document.getElementById('autoClassify'); if(ac) ac.checked=cfg.autoClassify!==false;
   const of=document.getElementById('useOutlookFolders'); if(of) of.checked=cfg.useOutlookFolders===true;
+  const or=document.getElementById('organizeInRoot'); if(or) or.checked=cfg.organizeInRoot!==false;
 }
 function saveConfig() {
   const cfg={
@@ -202,6 +223,7 @@ function saveConfig() {
     tenantId:document.getElementById('configTenantId').value.trim()||'common',
     redirectUri:document.getElementById('configRedirectUri').value.trim()||window.location.origin,
     autoClassify:document.getElementById('autoClassify').checked,
+    organizeInRoot:document.getElementById('organizeInRoot').checked,
     batchSize:parseInt(document.getElementById('configBatchSize').value)||20,
     useOutlookFolders:document.getElementById('useOutlookFolders')?.checked||false,
   };
@@ -268,6 +290,10 @@ function handleToken(token, expiresIn) {
   const cfg = loadConfig();
   state.useOutlookFolders = cfg.useOutlookFolders === true;
   if (state.useOutlookFolders) loadOutlookFolders();
+  
+  // Verifica se deve criar a estrutura de pastas agora (primeiro acesso)
+  if (cfg.createFoldersNow) ensureInitialFolderStructure();
+  
   fetchEmails().then(() => startPolling());
   // Agenda renovação silenciosa 5 min antes de expirar
   scheduleTokenRenewal(expiresAt);
@@ -967,17 +993,101 @@ async function fetchAttachments(emailId) {
     return (await res.json()).value||[];
   } catch { return []; }
 }
+
+// ============================================================
+// GERENCIAMENTO INTELIGENTE DE PASTAS
+// ============================================================
+async function ensureInitialFolderStructure() {
+  const cfg = loadConfig();
+  if (!cfg.createFoldersNow) return;
+  
+  showStatus('Criando estrutura de pastas no Outlook...');
+  const defaultCategories = ['Financeiro', 'Trabalho', 'Marketing', 'Pessoal', 'Outros'];
+  
+  try {
+    // Cria/Busca a raiz e as subpastas
+    for (const cat of defaultCategories) {
+      await getTargetFolderId(cat);
+    }
+    showNotif('success', '✅', 'Estrutura "MailMind" criada com sucesso!');
+    
+    // Remove a flag para não rodar novamente em recargas futuras
+    cfg.createFoldersNow = false;
+    localStorage.setItem('mailmind_config', JSON.stringify(cfg));
+  } catch (e) {
+    console.error('Erro ao criar estrutura inicial:', e);
+    showNotif('error', '❌', 'Erro ao criar pastas iniciais');
+  } finally {
+    hideStatus();
+  }
+}
+
+async function getTargetFolderId(folderName) {
+  const cfg = loadConfig();
+  // Se a configuração 'organizeInRoot' for true (padrão), usamos a estrutura MailMind > Pasta
+  // Se for false, criamos a pasta direto na raiz
+  const useHierarchy = cfg.organizeInRoot !== false; 
+
+  // Chave de cache para evitar chamadas repetidas
+  const cacheKey = useHierarchy ? `ROOT_SUB_${folderName}` : `FLAT_${folderName}`;
+  if (state.folderCache[cacheKey]) return state.folderCache[cacheKey];
+
+  try {
+    let parentId = null; // null = raiz do outlook
+
+    // 1. Se usar hierarquia, garante a pasta pai "MailMind"
+    if (useHierarchy) {
+      let rootId = state.folderCache['ROOT_MAILMIND'];
+      if (!rootId) {
+        // Busca pasta MailMind
+        const resRoot = await fetch("https://graph.microsoft.com/v1.0/me/mailFolders?$filter=displayName eq 'MailMind'", {headers:{Authorization:`Bearer ${state.accessToken}`}});
+        const dataRoot = await resRoot.json();
+        if (dataRoot.value && dataRoot.value.length > 0) {
+          rootId = dataRoot.value[0].id;
+        } else {
+          // Cria pasta MailMind
+          const createRoot = await fetch("https://graph.microsoft.com/v1.0/me/mailFolders", {
+            method:'POST', headers:{Authorization:`Bearer ${state.accessToken}`,'Content-Type':'application/json'},
+            body:JSON.stringify({displayName:'MailMind'})
+          });
+          rootId = (await createRoot.json()).id;
+        }
+        state.folderCache['ROOT_MAILMIND'] = rootId;
+      }
+      parentId = rootId;
+    }
+
+    // 2. Busca ou Cria a pasta de destino (dentro do pai ou na raiz)
+    const urlList = parentId 
+      ? `https://graph.microsoft.com/v1.0/me/mailFolders/${parentId}/childFolders`
+      : `https://graph.microsoft.com/v1.0/me/mailFolders`;
+    
+    const resList = await fetch(urlList, {headers:{Authorization:`Bearer ${state.accessToken}`}});
+    const dataList = await resList.json();
+    
+    let target = (dataList.value || []).find(f => f.displayName.toLowerCase() === folderName.toLowerCase());
+    
+    if (!target) {
+      const createRes = await fetch(urlList, {
+        method:'POST', headers:{Authorization:`Bearer ${state.accessToken}`,'Content-Type':'application/json'},
+        body:JSON.stringify({displayName:folderName})
+      });
+      target = await createRes.json();
+    }
+
+    state.folderCache[cacheKey] = target.id;
+    return target.id;
+  } catch (e) {
+    console.error('Erro ao resolver pasta:', e);
+    throw e;
+  }
+}
+
 async function moveEmail(emailId,folderName) {
   if(!state.accessToken) return;
   try {
-    const foldersRes=await fetch('https://graph.microsoft.com/v1.0/me/mailFolders',{headers:{Authorization:`Bearer ${state.accessToken}`}});
-    const foldersData=await foldersRes.json();
-    let folder=foldersData.value.find(f=>f.displayName.toLowerCase()===folderName.toLowerCase());
-    if(!folder){
-      const cr=await fetch('https://graph.microsoft.com/v1.0/me/mailFolders',{method:'POST',headers:{Authorization:`Bearer ${state.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({displayName:folderName})});
-      folder=await cr.json();
-    }
-    await fetch(`https://graph.microsoft.com/v1.0/me/messages/${emailId}/move`,{method:'POST',headers:{Authorization:`Bearer ${state.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({destinationId:folder.id})});
+    const destinationId = await getTargetFolderId(folderName);
+    await fetch(`https://graph.microsoft.com/v1.0/me/messages/${emailId}/move`,{method:'POST',headers:{Authorization:`Bearer ${state.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({destinationId:destinationId})});
   } catch(e){console.error('Erro ao mover:',e);}
 }
 

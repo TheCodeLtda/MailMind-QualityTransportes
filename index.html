@@ -21,7 +21,7 @@
 
     <!-- Progress bar -->
     <div class="setup-progress-track">
-      <div class="setup-progress-fill" id="setupProgressFill" style="width:33%"></div>
+      <div class="setup-progress-fill" id="setupProgressFill" style="width:25%"></div>
     </div>
     <div class="setup-step-indicators">
       <span class="step-dot active" id="dot1">1</span>
@@ -29,6 +29,8 @@
       <span class="step-dot" id="dot2">2</span>
       <span class="step-line"></span>
       <span class="step-dot" id="dot3">3</span>
+      <span class="step-line"></span>
+      <span class="step-dot" id="dot4">4</span>
     </div>
 
     <!-- STEP 1 — Claude API Key -->
@@ -62,13 +64,47 @@
       </div>
     </div>
 
-    <!-- STEP 3 — Conectar -->
+    <!-- STEP 3 — Preferências (NOVO) -->
     <div class="setup-step-panel" id="stepPanel3">
+      <div class="step-panel-title">📁 Estrutura de Pastas</div>
+      <div class="step-panel-desc">Para manter seu Outlook organizado, o MailMind utiliza uma lógica de hierarquia.</div>
+      
+      <!-- Opção de Estrutura de Pastas -->
+      <div class="setup-input-group" style="background:var(--surface2); border:1px solid var(--border2); padding:16px; border-radius:10px; margin-bottom:16px;">
+        <h4 style="font-size:14px; color:var(--text); margin-bottom:8px;">Como funciona:</h4>
+        <div class="setup-hint" style="margin-bottom:0;">
+          O aplicativo criará uma pasta principal chamada <strong>"MailMind"</strong>.<br/>
+          Todas as categorias (Financeiro, Trabalho, Pessoal, etc.) serão criadas como <strong>subpastas</strong> dentro dela.<br/><br/>
+          <em>Exemplo: Caixa de Entrada > MailMind > Financeiro</em>
+        </div>
+      </div>
+
+      <div class="setup-input-group" style="background:var(--surface2); border:1px solid var(--border2); padding:16px; border-radius:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <label class="config-label" style="font-size:14px; color:var(--text);">Criar essa estrutura de pastas agora?</label>
+          <label class="rule-toggle">
+            <input type="checkbox" id="setupCreateFoldersNow" checked/>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="setup-hint" style="margin-bottom:0;">
+          Se marcado, as pastas serão criadas no seu Outlook assim que você conectar na próxima etapa.
+        </div>
+      </div>
+
+      <div class="setup-btn-row" style="margin-top:24px;">
+        <button class="setup-btn-back" onclick="setupBack(3)">← Voltar</button>
+        <button class="setup-btn" onclick="setupNext(3)">Próximo →</button>
+      </div>
+    </div>
+
+    <!-- STEP 4 — Conectar (Antigo 3) -->
+    <div class="setup-step-panel" id="stepPanel4">
       <div class="step-panel-title">🔗 Conectar Outlook</div>
       <div class="step-panel-desc">Tudo pronto! Autorize o acesso à sua conta Microsoft via OAuth 2.0.</div>
       <div class="setup-summary" id="setupSummary"></div>
       <div class="setup-btn-row">
-        <button class="setup-btn-back" onclick="setupBack(3)">← Voltar</button>
+        <button class="setup-btn-back" onclick="setupBack(4)">← Voltar</button>
         <button class="setup-btn" onclick="saveSetup()">Salvar e Entrar →</button>
       </div>
     </div>
