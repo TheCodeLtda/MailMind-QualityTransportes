@@ -627,6 +627,11 @@ async function moveSelectedToFolder(val) {
     state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
     state.selectedEmail = null;
     renderEmailList();
+    document.getElementById('detailTab').innerHTML=`
+      <div style="display:flex;align-items:center;justify-content:center;height:200px;flex-direction:column;gap:12px;">
+        <div style="font-size:48px;opacity:0.2">📭</div>
+        <div style="color:var(--text3);font-size:14px">Selecione um e-mail para visualizar</div>
+      </div>`;
   } else {
     moveSelected(val);
   }
@@ -1485,7 +1490,13 @@ function moveSelected(folder) {
   const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
   email.folder=folder; email.tag=tagMap[folder]||'';
   if(state.connected&&state.accessToken) moveEmail(email.id,folder);
-  renderEmailList(); updateFolderCounts();
+  applyFilters(); updateFolderCounts();
+  state.selectedEmail = null;
+  document.getElementById('detailTab').innerHTML=`
+    <div style="display:flex;align-items:center;justify-content:center;height:200px;flex-direction:column;gap:12px;">
+      <div style="font-size:48px;opacity:0.2">📭</div>
+      <div style="color:var(--text3);font-size:14px">Selecione um e-mail para visualizar</div>
+    </div>`;
   showNotif('success','✅',`E-mail movido para ${folder}`);
 }
 // ============================================================
