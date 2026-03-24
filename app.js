@@ -1359,19 +1359,23 @@ async function classifyBatch(emailsToProcess) {
   for(const email of emailsToProcess) {
     try {
       const folder = await classifyEmail(email);
-      email.folder = folder; 
-      email.tag = tagMap[folder]||'';
       
-      if(state.connected && state.accessToken) {
-        await moveEmail(email.id, folder);
-        // Executa regra associada
-        const rule = state.rules.find(r => r.active && r.folder === folder && r.action && r.action !== 'none');
-        if (rule) await executeRuleAction(email, rule);
-      }
+      // VERIFICAÇÃO RIGOROSA: Só move se houver regra ativa para essa pasta
+      const matchedRule = state.rules.find(r => r.active && r.folder === folder);
+      
+      if (matchedRule) {
+        email.folder = folder; 
+        email.tag = tagMap[folder]||'';
+        
+        if(state.connected && state.accessToken) {
+          await moveEmail(email.id, folder);
+          if (matchedRule.action && matchedRule.action !== 'none') await executeRuleAction(email, matchedRule);
+        }
 
-      // Remove da lista visual local pois foi movido para pasta
-      state.emails = state.emails.filter(e => e.id !== email.id);
-      state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
+        // Remove da lista visual local pois foi movido para pasta
+        state.emails = state.emails.filter(e => e.id !== email.id);
+        state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
+      }
       
       // Delay API
       await new Promise(r => setTimeout(r, 4000));
@@ -1385,19 +1389,36 @@ async function classifySelected() {
   const email = state.selectedEmail; if (!email) return;
   const cfg = loadConfig();
   if (!cfg.claudeApiKey) { showNotif('error','❌','Configure a chave da API'); return; }
+  
+  // Validação inicial
+  if (state.rules.filter(r => r.active).length === 0) { showNotif('warn','⚠️','Nenhuma regra ativa.'); return; }
+
   showStatus('Classificando e-mail...');
   const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
+  
   const folder = await classifyEmail(email);
+  
+  // VERIFICAÇÃO RIGOROSA: Confere se a pasta retornada é de uma regra ativa
+  const matchedRule = state.rules.find(r => r.active && r.folder === folder);
+  
+  if (!matchedRule) {
+    hideStatus();
+    showNotif('warn', '⚠️', `Sem regra ativa correspondente (IA sugeriu: "${folder}"). E-mail mantido.`);
+    return;
+  }
+
   email.folder = folder; email.tag = tagMap[folder]||'';
   if (state.connected && state.accessToken) {
     await moveEmail(email.id, folder);
-    const rule = state.rules.find(r => r.active && r.folder === folder && r.action && r.action !== 'none');
-    if (rule) await executeRuleAction(email, rule);
+    if (matchedRule.action && matchedRule.action !== 'none') await executeRuleAction(email, matchedRule);
     // Remove o e-mail da lista local
     state.emails = state.emails.filter(e => e.id !== email.id);
     state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
+    state.selectedEmail = null; // Limpa seleção pois foi movido
   }
-  renderEmailList(); updateFolderCounts(); hideStatus();
+  renderEmailList();
+  if (state.connected) loadOutlookFolders(); // Atualiza contadores
+  hideStatus();
   showNotif('success','✅',`E-mail classificado como: ${folder}`);
 }
 async function classifyEmail(email) {
