@@ -1770,6 +1770,7 @@ async function renderEmailBody(email) {
   }
 }
 async function resolveCidImages(emailId, html) {
+  if (!html) return '';
   if (!/cid:/i.test(html)) return html;
   try {
     const attachments = await fetchAttachments(emailId);
@@ -1794,15 +1795,35 @@ async function resolveCidImages(emailId, html) {
       }
     }
 
-    // Substitui src="cid:..." tolerando espaços e variações de aspas
-    html = html.replace(/src\s*=\s*(["'])(cid:)(.*?)\1/gi, (match, quote, prefix, cidValue) => {
-      let val = cidMap.get(cidValue);
-      if (!val) try { val = cidMap.get(decodeURIComponent(cidValue)); } catch {}
-      if (!val) val = cidMap.get(normalize(cidValue));
+    // Usa DOMParser para manipular o HTML de forma segura e estruturada
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    // Seleciona todos os elementos com src começando com cid: (case insensitive selector não existe em CSS puro, tratamos no loop)
+    const elements = doc.querySelectorAll('[src^="cid:"], [src^="CID:"]');
+    let modified = false;
+
+    elements.forEach(el => {
+      const rawSrc = el.getAttribute('src');
+      if (!rawSrc) return;
       
-      if (val) return `src=${quote}${val}${quote}`;
-      return match; // Se não achar, mantém o original (provavelmente imagem quebrada)
+      // Remove o prefixo 'cid:' para buscar a chave
+      const cid = rawSrc.replace(/^cid:/i, '');
+      
+      // Tenta encontrar match exato, decodificado ou normalizado
+      let val = cidMap.get(cid);
+      if (!val) try { val = cidMap.get(decodeURIComponent(cid)); } catch {}
+      if (!val) val = cidMap.get(normalize(cid));
+
+      if (val) {
+        el.setAttribute('src', val);
+        modified = true;
+      }
     });
+    
+    // Se houve alteração, retorna o HTML atualizado (incluindo estrutura completa para preservar styles do head)
+    if (modified) return doc.documentElement.outerHTML;
+
   } catch (e) { console.warn('resolveCidImages:', e); }
   return html;
 }
