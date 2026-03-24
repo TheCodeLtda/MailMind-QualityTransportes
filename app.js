@@ -1360,6 +1360,44 @@ async function summarizeSelected() {
   } catch(e){document.getElementById('aiSummaryText').textContent='Erro: '+e.message;}
 }
 
+function toggleAiAction() {
+  const box = document.getElementById('aiActionBox');
+  box.classList.toggle('open');
+  if (box.classList.contains('open')) {
+    document.getElementById('aiActionInput').focus();
+  }
+}
+
+async function submitAiAction() {
+  const input = document.getElementById('aiActionInput');
+  const responseDiv = document.getElementById('aiActionResponse');
+  const btn = document.getElementById('btnAiAction');
+  const question = input.value.trim();
+  const email = state.selectedEmail;
+
+  if (!question || !email) return;
+
+  const cfg = loadConfig();
+  if (!cfg.claudeApiKey) { showNotif('error','❌','Configure a chave da API'); return; }
+
+  responseDiv.style.display = 'block';
+  responseDiv.textContent = 'Analisando...';
+  btn.disabled = true;
+
+  const bodyText = email.bodyText || stripHtml(email.bodyHtml||'') || email.preview || '';
+  const prompt = `Analise o seguinte e-mail e responda à pergunta do usuário.\n\nE-mail De: ${email.fromName} <${email.from}>\nAssunto: ${email.subject}\nData: ${email.dateFormatted}\n\nConteúdo:\n${bodyText.substring(0, 2500)}\n\n---\nPergunta do usuário: ${question}`;
+
+  try {
+    const res = await geminiApi([{ role: 'user', parts: [{ text: prompt }] }]);
+    const text = res.candidates?.[0]?.content?.parts?.[0]?.text || 'Não consegui processar a resposta.';
+    responseDiv.innerHTML = formatText(text); // Usa o formatText existente para negrito e quebras de linha
+  } catch (e) {
+    responseDiv.textContent = 'Erro: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // ============================================================
 // EMAIL LIST RENDER
 // ============================================================
@@ -1448,6 +1486,7 @@ async function renderEmailDetail(email) {
       </div>
       <div class="detail-actions">
         <button class="action-btn primary" onclick="summarizeSelected()">✨ Resumir com IA</button>
+        <button class="action-btn" onclick="toggleAiAction()">🤖 IA</button>
         <button class="action-btn" onclick="classifySelected()">⚡ Classificar</button>
         <button class="action-btn" onclick="openComposer('reply')">↩ Responder</button>
         <button class="action-btn" onclick="openComposer('replyAll')">↩↩ Resp. todos</button>
@@ -1462,6 +1501,14 @@ async function renderEmailDetail(email) {
     <div class="ai-summary-box" id="aiSummaryBox" style="display:none">
       <div class="ai-summary-label">✨ Resumo IA</div>
       <div class="ai-summary-text" id="aiSummaryText">Gerando resumo...</div>
+    </div>
+    <div class="ai-action-box" id="aiActionBox">
+      <div class="ai-summary-label">🤖 Pergunta sobre este e-mail</div>
+      <div class="ai-action-input-row">
+        <input type="text" class="ai-action-input" id="aiActionInput" placeholder="Ex: Qual o prazo mencionado? Extraia os valores..." onkeydown="if(event.key==='Enter') submitAiAction()">
+        <button class="action-btn primary" id="btnAiAction" onclick="submitAiAction()">Perguntar</button>
+      </div>
+      <div class="ai-action-response" id="aiActionResponse"></div>
     </div>
     <div class="detail-divider"></div>
     <div id="attachmentsArea"></div>

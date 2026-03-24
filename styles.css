@@ -346,6 +346,25 @@ body {
 }
 .ai-summary-text { font-size: 13px; color: var(--text2); line-height: 1.6; }
 
+.ai-action-box {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 18px; margin-bottom: 16px;
+  display: none; /* Oculto por padrão */
+}
+.ai-action-box.open { display: block; }
+.ai-action-input-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.ai-action-input {
+  flex: 1; background: var(--surface); border: 1px solid var(--border2);
+  border-radius: 8px; padding: 8px 12px; color: var(--text);
+  font-family: var(--font-body); font-size: 13px; outline: none;
+}
+.ai-action-input:focus { border-color: var(--accent); }
+.ai-action-response {
+  font-size: 13px; color: var(--text2); line-height: 1.6;
+  padding-top: 12px; border-top: 1px solid var(--border2);
+  display: none; white-space: pre-wrap;
+}
+
 .move-select {
   padding: 7px 12px; background: var(--surface2); border: 1px solid var(--border2);
   border-radius: 8px; color: var(--text); font-family: var(--font-body);
