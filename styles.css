@@ -55,12 +55,12 @@ body {
    ============================================================ */
 .sidebar {
   position: fixed; left: 0; top: 0; bottom: 0; width: 260px;
-  background: var(--surface); border-right: 1px solid var(--border);
+  background: #0d1017; border-right: 1px solid rgba(255,255,255,0.06);
   display: flex; flex-direction: column; z-index: 100;
 }
 .sidebar::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-h));
+  background: var(--accent); opacity: 0.8;
 }
 .logo { padding: 22px 20px 18px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); }
 .logo-icon {
@@ -75,23 +75,23 @@ body {
 
 .sidebar-section { padding: 16px 12px 8px; }
 .sidebar-label {
-  font-size: 10px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;
-  color: var(--text3); padding: 0 12px 12px; opacity: 0.8;
+  font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
+  color: var(--text3); padding: 12px 16px 8px; opacity: 0.6;
 }
 
 .nav-item {
   display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 8px;
   cursor: pointer; font-size: 14px; font-weight: 500; color: var(--text2);
-  transition: all 0.2s; border: none; background: none; width: 100%; text-align: left;
-  margin-bottom: 2px;
+  transition: all 0.2s; border: 1px solid transparent; background: none; width: 100%; text-align: left;
+  margin-bottom: 4px;
 }
 .nav-item:hover { background: var(--surface2); color: var(--text); transform: translateX(2px); }
 .nav-item.active {
-  background: var(--surface2); color: var(--text); font-weight: 600;
+  background: rgba(255,255,255,0.05); color: var(--text); font-weight: 600; border-color: rgba(255,255,255,0.05);
 }
 .nav-item.active .nav-icon { color: var(--accent); transform: scale(1.1); }
 .nav-item .nav-icon {
-  width: 18px; text-align: center; font-size: 16px; color: var(--text3); transition: all 0.2s;
+  width: 20px; text-align: center; font-size: 16px; color: var(--text3); transition: all 0.2s;
 }
 .nav-item .badge {
   margin-left: auto; background: var(--accent); color: #fff; box-shadow: 0 2px 6px rgba(244,123,32,0.4);
@@ -103,22 +103,22 @@ body {
 
 .folder-item {
   display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-radius: 8px;
-  cursor: pointer; font-size: 13px; color: var(--text2); transition: all 0.2s;
-  margin-bottom: 2px; border: 1px solid transparent;
+  cursor: pointer; font-size: 14px; color: var(--text2); transition: all 0.2s;
+  margin-bottom: 2px; border: 1px solid transparent; font-weight: 500;
 }
-.folder-item:hover { background: var(--surface2); color: var(--text); border-color: var(--border2); }
+.folder-item:hover { background: var(--surface2); color: var(--text); }
 .folder-dot {
-  width: 10px; height: 10px; border-radius: 4px; flex-shrink: 0;
-  opacity: 0.7; transition: opacity 0.2s;
+  width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0;
+  opacity: 0.6; transition: opacity 0.2s;
 }
 .folder-item:hover .folder-dot { opacity: 1; }
-.folder-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.folder-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .folder-count {
-  font-size: 11px; color: var(--text2); flex-shrink: 0;
-  background: var(--surface3); border: 1px solid var(--border2);
-  padding: 2px 8px; border-radius: 12px; min-width: 28px; text-align: center;
-  font-weight: 600; opacity: 0.8;
+  font-size: 11px; color: #fff; flex-shrink: 0;
+  background: rgba(255,255,255,0.1);
+  padding: 2px 8px; border-radius: 6px; min-width: 24px; text-align: center;
+  font-weight: 700; opacity: 0.9; margin-right: 4px;
 }
 .folder-item:hover .folder-count { opacity: 1; background: var(--bg); border-color: var(--border3); }
 /* Oculta o contador se estiver vazio */
