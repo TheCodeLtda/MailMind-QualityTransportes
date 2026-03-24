@@ -1770,18 +1770,36 @@ async function renderEmailBody(email) {
   }
 }
 async function resolveCidImages(emailId, html) {
-  if (!/src=["']cid:/i.test(html)) return html;
+  if (!/cid:/i.test(html)) return html;
   try {
     const attachments = await fetchAttachments(emailId);
+    if (!attachments || attachments.length === 0) return html;
+
+    // Cria um mapa para busca rápida: Chave (CID/Nome) -> DataURL
+    const cidMap = new Map();
     for (const att of attachments) {
-      if (att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentId) {
-        const cid      = att.contentId.replace(/[<>]/g, '');
-        const escaped  = cid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const re       = new RegExp('cid:' + escaped, 'gi');
-        const dataUrl  = 'data:' + att.contentType + ';base64,' + att.contentBytes;
-        html = html.replace(re, dataUrl);
+      if (att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentBytes) {
+        const dataUrl = `data:${att.contentType};base64,${att.contentBytes}`;
+        // Mapeia pelo Content-ID (com e sem <>)
+        if (att.contentId) {
+          cidMap.set(att.contentId.replace(/[<>]/g, '').trim(), dataUrl);
+          cidMap.set(att.contentId.trim(), dataUrl);
+        }
+        // Fallback: Mapeia pelo nome do arquivo (alguns clientes de e-mail usam o nome como CID)
+        if (att.name) {
+          cidMap.set(att.name.trim(), dataUrl);
+        }
       }
     }
+
+    // Substitui ocorrências de src="cid:..." no HTML
+    html = html.replace(/src=(["'])cid:([^"']+)\1/gi, (match, quote, cidInHtml) => {
+      // Decodifica URI (ex: image%2001.jpg -> image 01.jpg) para aumentar chance de match
+      const key = decodeURIComponent(cidInHtml).trim();
+      const val = cidMap.get(key) || cidMap.get(cidInHtml.trim());
+      if (val) return `src=${quote}${val}${quote}`;
+      return match; // Se não achar, mantém o original (provavelmente imagem quebrada)
+    });
   } catch (e) { console.warn('resolveCidImages:', e); }
   return html;
 }
