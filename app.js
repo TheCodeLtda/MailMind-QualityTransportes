@@ -1788,8 +1788,13 @@ async function resolveCidImages(emailId, html) {
         const dataUrl = `data:${type};base64,${att.contentBytes}`;
         
         if (att.contentId) {
-          cidMap.set(att.contentId, dataUrl);
-          cidMap.set(normalize(att.contentId), dataUrl);
+          const raw = att.contentId;
+          const norm = normalize(raw);
+          // Mapeia original, normalizado e versões em lowercase para garantir match
+          cidMap.set(raw, dataUrl);
+          cidMap.set(norm, dataUrl);
+          cidMap.set(raw.toLowerCase(), dataUrl);
+          cidMap.set(norm.toLowerCase(), dataUrl);
         }
         if (att.name) cidMap.set(att.name, dataUrl);
       }
@@ -1799,24 +1804,32 @@ async function resolveCidImages(emailId, html) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
     
-    // Seleciona todos os elementos com src começando com cid: (case insensitive selector não existe em CSS puro, tratamos no loop)
-    const elements = doc.querySelectorAll('[src^="cid:"], [src^="CID:"]');
+    // Seleciona qualquer elemento com atributo src
+    const elements = doc.querySelectorAll('[src]');
     let modified = false;
 
     elements.forEach(el => {
       const rawSrc = el.getAttribute('src');
-      if (!rawSrc) return;
+      if (!rawSrc || !rawSrc.trim().toLowerCase().startsWith('cid:')) return;
       
       // Remove o prefixo 'cid:' para buscar a chave
-      const cid = rawSrc.replace(/^cid:/i, '');
+      const cid = rawSrc.replace(/^cid:/i, '').trim();
       
       // Tenta encontrar match exato, decodificado ou normalizado
       let val = cidMap.get(cid);
       if (!val) try { val = cidMap.get(decodeURIComponent(cid)); } catch {}
       if (!val) val = cidMap.get(normalize(cid));
+      if (!val) val = cidMap.get(cid.toLowerCase()); // Tenta lowercase
+      if (!val) val = cidMap.get(normalize(cid).toLowerCase());
 
       if (val) {
         el.setAttribute('src', val);
+        modified = true;
+      } else {
+        // Se não encontrou, remove o src para evitar o erro "ERR_UNKNOWN_URL_SCHEME" no console
+        el.removeAttribute('src');
+        el.setAttribute('data-broken-cid', cid);
+        el.setAttribute('alt', '[Imagem não disponível]');
         modified = true;
       }
     });
