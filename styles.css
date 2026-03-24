@@ -116,7 +116,7 @@ body {
 
 .folder-count {
   font-size: 11px; color: #fff; flex-shrink: 0;
-  background: rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.15);
   padding: 2px 8px; border-radius: 6px; min-width: 24px; text-align: center;
   font-weight: 700; opacity: 0.9; margin-right: 4px;
 }
