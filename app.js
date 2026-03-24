@@ -1777,26 +1777,29 @@ async function resolveCidImages(emailId, html) {
 
     // Cria um mapa para busca rápida: Chave (CID/Nome) -> DataURL
     const cidMap = new Map();
+    
+    // Helper para normalizar (remove < > do Outlook)
+    const normalize = (s) => (s || '').replace(/^<|>$/g, '').trim();
+
     for (const att of attachments) {
       if (att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentBytes) {
-        const dataUrl = `data:${att.contentType};base64,${att.contentBytes}`;
-        // Mapeia pelo Content-ID (com e sem <>)
+        const type = att.contentType || 'application/octet-stream';
+        const dataUrl = `data:${type};base64,${att.contentBytes}`;
+        
         if (att.contentId) {
-          cidMap.set(att.contentId.replace(/[<>]/g, '').trim(), dataUrl);
-          cidMap.set(att.contentId.trim(), dataUrl);
+          cidMap.set(att.contentId, dataUrl);
+          cidMap.set(normalize(att.contentId), dataUrl);
         }
-        // Fallback: Mapeia pelo nome do arquivo (alguns clientes de e-mail usam o nome como CID)
-        if (att.name) {
-          cidMap.set(att.name.trim(), dataUrl);
-        }
+        if (att.name) cidMap.set(att.name, dataUrl);
       }
     }
 
-    // Substitui ocorrências de src="cid:..." no HTML
-    html = html.replace(/src=(["'])cid:([^"']+)\1/gi, (match, quote, cidInHtml) => {
-      // Decodifica URI (ex: image%2001.jpg -> image 01.jpg) para aumentar chance de match
-      const key = decodeURIComponent(cidInHtml).trim();
-      const val = cidMap.get(key) || cidMap.get(cidInHtml.trim());
+    // Substitui src="cid:..." tolerando espaços e variações de aspas
+    html = html.replace(/src\s*=\s*(["'])(cid:)(.*?)\1/gi, (match, quote, prefix, cidValue) => {
+      let val = cidMap.get(cidValue);
+      if (!val) try { val = cidMap.get(decodeURIComponent(cidValue)); } catch {}
+      if (!val) val = cidMap.get(normalize(cidValue));
+      
       if (val) return `src=${quote}${val}${quote}`;
       return match; // Se não achar, mantém o original (provavelmente imagem quebrada)
     });
