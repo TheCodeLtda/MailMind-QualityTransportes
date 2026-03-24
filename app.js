@@ -370,7 +370,7 @@ async function loadOutlookFolders() {
   if (!state.accessToken) return;
   
   // Função recursiva para buscar pastas e subpastas
-  const fetchRecursive = async (url, level = 0) => {
+  const fetchRecursive = async (url, level = 0, parentId = null) => {
     try {
       const res = await fetch(url, { headers: { Authorization: `Bearer ${state.accessToken}` } });
       if (!res.ok) return [];
@@ -380,11 +380,12 @@ async function loadOutlookFolders() {
       
       for (const f of items) {
         f.level = level; // Adiciona nível para indentação
+        f.parentId = parentId; // Guarda quem é o pai para montar a árvore
         result.push(f);
         
         if (f.childFolderCount && f.childFolderCount > 0) {
           const subUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/${f.id}/childFolders?$top=100&$select=id,displayName,unreadItemCount,totalItemCount,childFolderCount&$orderby=displayName`;
-          const children = await fetchRecursive(subUrl, level + 1);
+          const children = await fetchRecursive(subUrl, level + 1, f.id);
           result.push(...children);
         }
       }
@@ -422,19 +423,60 @@ function renderSidebarFolders() {
     return state.emails.filter(e => e.folder === name).length;
   };
 
+  // Função auxiliar para renderizar HTML da árvore recursivamente
+  const renderTreeHtml = (items, colors) => {
+    return items.map((f, i) => {
+      const hasChildren = f.children && f.children.length > 0;
+      const toggleHtml = hasChildren 
+        ? `<div class="folder-toggle-icon" onclick="event.stopPropagation();toggleSubfolders('${f.id}', this)">▶</div>`
+        : `<div class="folder-toggle-icon" style="opacity:0"></div>`; // Espaço reservado para alinhamento
+      
+      // HTML do Item (Cabeçalho da pasta)
+      const itemHtml = `
+        <div class="folder-item folder-item-outlook" data-folderid="${f.id}" style="padding-left:0">
+          ${toggleHtml}
+          <div class="folder-dot" style="background:${colors[i % colors.length]}"></div>
+          <span class="folder-name" onclick="fetchEmailsByFolder('${f.id}','${escHtml(f.displayName)}')">${escHtml(f.displayName)}</span>
+          <span class="folder-count" title="Total de mensagens">${f.totalItemCount || 0}</span>
+          <button class="folder-menu-btn" onclick="event.stopPropagation();openFolderMenu('${f.id}','${escHtml(f.displayName)}',this)" title="Opções">•••</button>
+        </div>`;
+
+      // Se tiver filhos, cria container aninhado (oculto por padrão, exceto raiz se desejar)
+      if (hasChildren) {
+        return `
+          <div class="folder-tree-node">
+            ${itemHtml}
+            <div class="folder-children" id="children-${f.id}">
+              ${renderTreeHtml(f.children, colors)}
+            </div>
+          </div>`;
+      }
+      return itemHtml;
+    }).join('');
+  };
+
   if (state.useOutlookFolders && state.outlookFolders.length) {
     // Pastas reais do Outlook com menu de contexto
     const colors = ['#7C6EFA','#5DCAA5','#EF9F27','#F0997B','#E24B4A','#4AACE2','#B26EFA'];
-    list.innerHTML = state.outlookFolders.map((f, i) => {
-      const paddingLeft = f.level ? (14 + (f.level * 16)) : 14;
-      return `
-      <div class="folder-item folder-item-outlook" data-folderid="${f.id}" style="padding-left:${paddingLeft}px">
-        <div class="folder-dot" style="background:${colors[i % colors.length]}"></div>
-        <span class="folder-name" onclick="fetchEmailsByFolder('${f.id}','${escHtml(f.displayName)}')">${escHtml(f.displayName)}</span>
-        <span class="folder-count" title="Total de mensagens">${f.totalItemCount || 0}</span>
-        <button class="folder-menu-btn" onclick="event.stopPropagation();openFolderMenu('${f.id}','${escHtml(f.displayName)}',this)" title="Opções">•••</button>
-      </div>`;}).join('') +
-      `<div class="folder-new-btn" onclick="openNewFolderModal()">+ Nova pasta</div>`;
+    
+    // Constrói estrutura de árvore a partir da lista plana
+    const folderMap = {};
+    const roots = [];
+    
+    // 1. Cria mapa
+    state.outlookFolders.forEach(f => { folderMap[f.id] = { ...f, children: [] }; });
+    
+    // 2. Monta hierarquia
+    state.outlookFolders.forEach(f => {
+      if (f.parentId && folderMap[f.parentId]) {
+        folderMap[f.parentId].children.push(folderMap[f.id]);
+      } else {
+        roots.push(folderMap[f.id]);
+      }
+    });
+
+    list.innerHTML = renderTreeHtml(roots, colors) + `<div class="folder-new-btn" onclick="openNewFolderModal()">+ Nova pasta</div>`;
+    
   } else {
     // Pastas fixas do MailMind — carrega do localStorage ou usa padrão
     if (!state.fixedFolders) {
@@ -449,7 +491,7 @@ function renderSidebarFolders() {
     list.innerHTML = state.fixedFolders.map(f => {
       const count = getCount(f.name);
       return `
-      <div class="folder-item folder-item-fixed" data-foldername="${escHtml(f.name)}">
+      <div class="folder-item folder-item-fixed" data-foldername="${escHtml(f.name)}" style="padding-left:22px">
         <div class="folder-dot" style="background:${f.color}"></div>
         <span class="folder-name" onclick="filterByFolder('${escHtml(f.name)}')">${escHtml(f.name)}</span>
         <span class="folder-count" title="Total de mensagens">${count}</span>
@@ -457,6 +499,22 @@ function renderSidebarFolders() {
       </div>`;
     }).join('') +
       `<div class="folder-new-btn" onclick="addFixedFolder()">+ Nova pasta</div>`;
+  }
+}
+
+function toggleSubfolders(id, btn) {
+  const container = document.getElementById(`children-${id}`);
+  if (container) {
+    const isOpen = container.classList.contains('open');
+    if (isOpen) {
+      container.classList.remove('open');
+      btn.classList.remove('open');
+      btn.textContent = '▶';
+    } else {
+      container.classList.add('open');
+      btn.classList.add('open');
+      btn.textContent = '▼';
+    }
   }
 }
 
