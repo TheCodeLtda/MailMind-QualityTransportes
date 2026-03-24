@@ -1305,27 +1305,33 @@ async function classifyAllEmails() {
       showStatus(`Classificando ${i+1}/${toProcess.length}: ${email.subject.substring(0,20)}...`);
       
       const folder = await classifyEmail(email);
-      
-      // Aplica mudanças
-      email.folder = folder; 
-      email.tag = tagMap[folder]||'';
 
-      if(state.connected && state.accessToken){
-        await moveEmail(email.id, folder);
-        // Executa ação automática da regra correspondente
-        const rule = state.rules.find(r => r.active && r.folder === folder && r.action && r.action !== 'none');
-        if (rule) await executeRuleAction(email, rule);
+      // VERIFICAÇÃO RIGOROSA:
+      // Só move se a pasta retornada corresponder a uma REGRA ATIVA.
+      // Se a IA retornou "Outros" (padrão) mas não existe regra ativa para "Outros", ignoramos o e-mail.
+      const matchedRule = state.rules.find(r => r.active && r.folder === folder);
+      
+      if (matchedRule) {
+        // Aplica mudanças apenas se houve match com regra ativa
+        email.folder = folder; 
+        email.tag = tagMap[folder]||'';
+
+        if(state.connected && state.accessToken){
+          await moveEmail(email.id, folder);
+          // Executa ação automática da regra correspondente (se houver)
+          if (matchedRule.action && matchedRule.action !== 'none') await executeRuleAction(email, matchedRule);
+        }
+
+        // Remove da visualização atual (feedback visual instantâneo)
+        state.emails = state.emails.filter(e => e.id !== email.id);
+        state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
+        
+        // Se o usuário estiver na tela de e-mails, atualiza a lista em tempo real
+        if (state.currentView === 'emails') renderEmailList();
+
+        processedCount++;
       }
-
-      // Remove da visualização atual se estivermos vendo a lista (feedback visual instantâneo)
-      // Mas só removemos do array global no final ou manipulamos aqui com cuidado
-      state.emails = state.emails.filter(e => e.id !== email.id);
-      state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
       
-      // Se o usuário estiver na tela de e-mails, atualiza a lista em tempo real
-      if (state.currentView === 'emails') renderEmailList();
-
-      processedCount++;
       // Delay para respeitar limite da API gratuita (Rate Limit)
       await new Promise(r => setTimeout(r, 2000));
     }
