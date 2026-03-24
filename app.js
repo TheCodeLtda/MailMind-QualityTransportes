@@ -388,7 +388,7 @@ function renderSidebarFolders() {
       <div class="folder-item folder-item-outlook" data-folderid="${f.id}">
         <div class="folder-dot" style="background:${colors[i % colors.length]}"></div>
         <span class="folder-name" onclick="fetchEmailsByFolder('${f.id}','${escHtml(f.displayName)}')">${escHtml(f.displayName)}</span>
-        <span class="folder-count">${f.unreadItemCount > 0 ? f.unreadItemCount : ''}</span>
+        <span class="folder-count" id="cnt-${escHtml(f.displayName)}">${f.unreadItemCount > 0 ? f.unreadItemCount : ''}</span>
         <button class="folder-menu-btn" onclick="event.stopPropagation();openFolderMenu('${f.id}','${escHtml(f.displayName)}',this)" title="Opções">•••</button>
       </div>`).join('') +
       `<div class="folder-new-btn" onclick="openNewFolderModal()">+ Nova pasta</div>`;
