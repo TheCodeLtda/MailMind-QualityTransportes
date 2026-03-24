@@ -2218,9 +2218,13 @@ function renderFilterBar() {
   state.customFilters.forEach(filterName => {
     const btn = document.createElement('button');
     btn.className = 'filter-chip dynamic-filter';
-    if (state.currentFilter === filterName) btn.classList.add('active');
+    
+    // Destaca se for o filtro atual OU se for a pasta atual
+    if (state.currentFilter === filterName || state.currentFolder === filterName) btn.classList.add('active');
+    
     btn.textContent = filterName;
-    btn.onclick = () => setFilter(filterName, btn);
+    // Usa filterByFolder para carregar o conteúdo da pasta (funciona para subpastas)
+    btn.onclick = () => filterByFolder(filterName);
     bar.appendChild(btn);
   });
 }
@@ -2285,10 +2289,23 @@ async function filterByFolder(folder) {
   // Se conectado, tenta buscar da pasta real no Outlook (Sincronização)
   if (state.connected && state.accessToken) {
     try {
-      showStatus(`Sincronizando ${folder}...`);
-      const fid = await getTargetFolderId(folder);
+      // 1. Tenta encontrar na lista de pastas já carregada (inclui subpastas recursivas)
+      let fid = null;
+      if (state.outlookFolders && state.outlookFolders.length > 0) {
+        const found = state.outlookFolders.find(f => f.displayName.toLowerCase() === folder.toLowerCase());
+        if (found) fid = found.id;
+      }
+
+      // 2. Se não achou na memória, tenta resolver via API (pode criar se não existir, dependendo da lógica)
+      if (!fid) {
+        showStatus(`Localizando ${folder}...`);
+        fid = await getTargetFolderId(folder);
+      }
+
       if (fid) {
         await fetchEmailsByFolder(fid, folder);
+        // Atualiza a barra de filtros para refletir a pasta ativa
+        renderFilterBar(); 
         return; // Sincronização feita, não usa filtro local
       }
     } catch(e) {
@@ -2317,7 +2334,7 @@ function applyFilters(){
   if(state.currentFolder)emails=emails.filter(e=>e.folder===state.currentFolder);
   else if(state.currentFilter==='unread')emails=emails.filter(e=>e.unread);
   else if(state.currentFilter==='high_importance')emails=emails.filter(e=>e.importance==='high');
-  else if(state.customFilters.includes(state.currentFilter))emails=emails.filter(e=>e.folder===state.currentFilter);
+  // Removido o else if dos customFilters aqui, pois agora eles agem como pastas via filterByFolder
   if(search)emails=emails.filter(e=>e.subject.toLowerCase().includes(search)||e.from.toLowerCase().includes(search)||e.preview.toLowerCase().includes(search));
   state.filteredEmails=emails;renderEmailList();
 }
