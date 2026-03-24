@@ -234,7 +234,6 @@ function saveConfig() {
   // Atualiza sidebar se conectado
   if (state.connected) {
     if (cfg.useOutlookFolders) loadOutlookFolders();
-    else renderSidebarFolders();
   }
   showNotif('success','✅','Configurações salvas e aplicadas com sucesso!');
 }
@@ -296,8 +295,7 @@ function handleToken(token, expiresIn) {
   showNotif('success','✅','Outlook conectado com sucesso!');
   const cfg = loadConfig();
   state.useOutlookFolders = cfg.useOutlookFolders === true;
-  if (state.useOutlookFolders) loadOutlookFolders();
-  
+  loadOutlookFolders(); // Carrega pastas para ter os contadores atualizados (mesmo no modo fixo)
   // Verifica se deve criar a estrutura de pastas agora (primeiro acesso)
   if (cfg.createFoldersNow) ensureInitialFolderStructure();
   
@@ -469,6 +467,7 @@ function openFixedFolderMenu(event, name) {
   menu.className = 'folder-ctx-menu';
   menu.innerHTML = `
     <div class="ctx-item" onclick="summarizeFolder('${escHtml(name)}', null)">✨ Resumir pasta com IA</div>
+    <div class="ctx-item" onclick="chatAboutFolder('${escHtml(name)}', null)">🤖 IA da Pasta</div>
     <div class="ctx-item" onclick="menu_shareFolder('${escHtml(name)}')">→ Compartilhar pasta</div>
     <div class="ctx-item" onclick="menu_renameFixed('${escHtml(name)}')">✏️ Renomear</div>
     <div class="ctx-item ctx-danger" onclick="deleteFixedFolder('${escHtml(name)}')">🗑 Excluir</div>`;
@@ -595,6 +594,7 @@ function openFolderMenu(folderId, folderName, btn) {
   menu.className = 'folder-ctx-menu';
   menu.innerHTML = `
     <div class="ctx-item" onclick="summarizeFolder('${escHtml(folderName)}', '${folderId}')">✨ Resumir pasta com IA</div>
+    <div class="ctx-item" onclick="chatAboutFolder('${escHtml(folderName)}', '${folderId}')">🤖 IA da Pasta</div>
     <div class="ctx-item" onclick="menu_shareFolder('${escHtml(folderName)}','${folderId}')">→ Compartilhar pasta</div>
     <div class="ctx-item" onclick="menu_renameOutlook('${folderId}','${escHtml(folderName)}')">✏️ Renomear</div>
     <div class="ctx-item ctx-danger" onclick="confirmDeleteFolder('${folderId}','${escHtml(folderName)}')">🗑 Excluir pasta</div>`;
@@ -1366,6 +1366,15 @@ async function summarizeSelected() {
   } catch(e){document.getElementById('aiSummaryText').textContent='Erro: '+e.message;}
 }
 
+async function chatAboutFolder(folderName, folderId) {
+  document.getElementById('folderCtxMenu')?.remove();
+  // Carrega a pasta visualmente para dar contexto
+  if (folderId || folderName) filterByFolder(folderName);
+  
+  switchTab('chat');
+  addChatMessage('assistant', `🤖 Olá! Estou pronto para analisar a pasta **"${folderName}"**. O que você deseja saber? (Ex: "Quais são os prazos?", "Liste os remetentes", "Resuma os assuntos")`);
+}
+
 function toggleAiAction() {
   const box = document.getElementById('aiActionBox');
   box.classList.toggle('open');
@@ -1978,12 +1987,28 @@ function applyFilters(){
 }
 function updateFolderCounts(){
   if (state.useOutlookFolders) return; // No modo Outlook, usamos os contadores da API (totalItemCount), não o local
+  
   const folders = state.fixedFolders || [
     {name:'Trabalho'},{name:'Financeiro'},{name:'Marketing'},{name:'Pessoal'},{name:'Outros'}
   ];
+
+  // Mapa de contagem real do Outlook (para exibir o total do servidor, não apenas o local)
+  const outlookMap = new Map();
+  if (state.outlookFolders) {
+    state.outlookFolders.forEach(f => outlookMap.set(f.displayName.toLowerCase(), f.totalItemCount));
+  }
+
   folders.forEach(f=>{
     const el=document.getElementById('cnt-'+f.name);
-    if(el) el.textContent=state.emails.filter(e=>e.folder===f.name).length;
+    if(el) {
+      // Se tivermos a contagem real do Outlook, usamos ela. Se não, fallback para local.
+      if (state.connected && outlookMap.has(f.name.toLowerCase())) {
+        const count = outlookMap.get(f.name.toLowerCase());
+        el.textContent = count !== undefined ? count : '';
+      } else {
+        el.textContent = state.emails.filter(e=>e.folder===f.name).length || '';
+      }
+    }
   });
 }
 function updateUnreadBadge(){
@@ -2242,7 +2267,7 @@ async function checkNewEmails() {
     renderPagination();
     
     // Atualiza contadores de pastas (Outlook) para manter sincronizado
-    if (state.useOutlookFolders) loadOutlookFolders();
+    loadOutlookFolders();
 
     // Dispara classificação automática se habilitado
     const cfg = loadConfig();
