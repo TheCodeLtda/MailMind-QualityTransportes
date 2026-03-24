@@ -395,7 +395,20 @@ body {
    AI CHAT
    ============================================================ */
 .ai-chat { flex: 1; display: none; flex-direction: column; min-height: 0; overflow: hidden; }
-.ai-chat.active { display: flex; }
+.ai-chat.active { display: flex; position: relative; }
+
+.chat-header-overlay {
+  position: absolute; top: 16px; right: 24px; z-index: 10;
+}
+.clear-chat-btn {
+  background: rgba(226,75,74,0.08); color: var(--danger);
+  border: 1px solid rgba(226,75,74,0.2);
+  padding: 6px 12px; border-radius: 6px;
+  font-family: var(--font-body); font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  cursor: pointer; transition: all 0.2s; backdrop-filter: blur(4px);
+}
+.clear-chat-btn:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
 
 .chat-messages {
   flex: 1; overflow-y: auto; padding: 24px 32px;

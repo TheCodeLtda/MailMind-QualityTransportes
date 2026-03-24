@@ -1759,6 +1759,15 @@ async function sendChat() {
   } catch(e){removeTyping(typing);addChatMessage('assistant','Erro: '+e.message);}
 }
 
+function clearChat() {
+  if(!confirm('Deseja limpar todo o histórico da conversa?')) return;
+  state.chatHistory = [];
+  localStorage.removeItem('mailmind_chat_history');
+  const msgs = document.getElementById('chatMessages');
+  msgs.innerHTML = '';
+  addChatMessage('assistant', 'Histórico limpo. Como posso ajudar agora?');
+}
+
 async function summarizeFolder(folderName, folderId) {
   document.getElementById('folderCtxMenu')?.remove();
   switchTab('chat');
@@ -2096,6 +2105,11 @@ function switchTab(tab,btn){
   if(btn)btn.classList.add('active');
   document.getElementById('detailTab').classList.toggle('active',tab==='detail');
   document.getElementById('chatTab').classList.toggle('active',tab==='chat');
+  
+  if(tab==='chat') {
+    const msgs = document.getElementById('chatMessages');
+    if(msgs) setTimeout(() => msgs.scrollTop = msgs.scrollHeight, 50);
+  }
 }
 
 // ============================================================
