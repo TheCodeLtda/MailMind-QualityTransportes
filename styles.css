@@ -582,6 +582,12 @@ input:checked + .toggle-slider:before { transform: translateX(16px); }
   padding: 8px 12px; color: var(--text); font-family: var(--font-body); font-size: 13px;
   outline: none; width: 240px; transition: border-color 0.15s;
 }
+/* Remove setas de incremento/decremento (spinners) */
+.config-input[type=number]::-webkit-inner-spin-button, 
+.config-input[type=number]::-webkit-outer-spin-button { 
+  -webkit-appearance: none; margin: 0; 
+}
+.config-input[type=number] { -moz-appearance: textfield; }
 .config-input:focus { border-color: var(--accent); }
 .save-config-btn {
   padding: 10px 24px;
