@@ -188,9 +188,6 @@
       <button class="filter-chip active" onclick="setFilter('all', this)">Todos</button>
       <button class="filter-chip" onclick="setFilter('unread', this)">Não lidos</button>
       <button class="filter-chip" onclick="setFilter('high_importance', this)" style="color:var(--danger);">Alta Prioridade</button>
-      <button class="filter-chip" onclick="setFilter('Trabalho', this)">Trabalho</button>
-      <button class="filter-chip" onclick="setFilter('Financeiro', this)">Financeiro</button>
-      <button class="filter-chip" onclick="setFilter('Marketing', this)">Marketing</button>
     </div>
     <div class="email-list" id="emailList"></div>
     <div class="pagination-bar" id="paginationBar"></div>
@@ -347,6 +344,18 @@
         <div class="config-sub">Número de e-mails processados por vez</div>
       </div>
       <input type="number" class="config-input" id="configBatchSize" value="20" min="5" max="50" style="width:80px"/>
+    </div>
+  </div>
+
+  <div class="config-group">
+    <div class="config-group-title">Filtros Rápidos (Barra Superior)</div>
+    <div class="config-sub" style="margin-bottom:12px;">Adicione atalhos para pastas específicas na barra de filtros.</div>
+    <div class="config-row" style="display:block; padding-top:0;">
+      <div style="display:flex; gap:8px; margin-bottom:12px;">
+        <input type="text" class="config-input" id="newFilterInput" placeholder="Nome exato da pasta (ex: Financeiro)" style="flex:1"/>
+        <button class="save-config-btn" style="width:auto; padding:8px 16px; font-size:11px;" onclick="addCustomFilterFromInput()">Adicionar</button>
+      </div>
+      <div id="configFilterList" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
     </div>
   </div>
 

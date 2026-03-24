@@ -76,6 +76,7 @@ const state = {
   outlookFolders: [],
   useOutlookFolders: false,
   folderCache: {}, // Cache de IDs de pastas para performance
+  customFilters: [], // Filtros personalizados da barra superior
   fixedFolders: null,
 };
 
@@ -188,10 +189,12 @@ function loadApp(cfg) {
   state.filteredEmails = [...state.emails];
   state.useOutlookFolders = cfg.useOutlookFolders === true;
   state.chatHistory = JSON.parse(localStorage.getItem('mailmind_chat_history') || '[]');
+  state.customFilters = JSON.parse(localStorage.getItem('mailmind_custom_filters') || '[]');
 
   // Renderiza pastas imediatamente (com botões ···)
   renderSidebarFolders();
   renderRules();
+  renderFilterBar(); // Renderiza filtros personalizados
   renderEmailList();
   updateUnreadBadge();
   renderChatHistory();
@@ -214,6 +217,7 @@ function populateConfigPanel() {
   Object.entries(fields).forEach(([id,val])=>{ const el=document.getElementById(id); if(el) el.value=val; });
   const ac=document.getElementById('autoClassify'); if(ac) ac.checked=cfg.autoClassify!==false;
   const of=document.getElementById('useOutlookFolders'); if(of) of.checked=cfg.useOutlookFolders===true;
+  renderConfigFilters();
 }
 function saveConfig() {
   const cfg={
@@ -2202,6 +2206,65 @@ function saveRule(){
 }
 
 // ============================================================
+// CUSTOM FILTERS (User Defined)
+// ============================================================
+function renderFilterBar() {
+  const bar = document.getElementById('filterBar');
+  if (!bar) return;
+  
+  // Remove apenas os filtros dinâmicos antigos (preserva os fixos)
+  bar.querySelectorAll('.dynamic-filter').forEach(el => el.remove());
+
+  state.customFilters.forEach(filterName => {
+    const btn = document.createElement('button');
+    btn.className = 'filter-chip dynamic-filter';
+    if (state.currentFilter === filterName) btn.classList.add('active');
+    btn.textContent = filterName;
+    btn.onclick = () => setFilter(filterName, btn);
+    bar.appendChild(btn);
+  });
+}
+
+function addCustomFilterFromInput() {
+  const input = document.getElementById('newFilterInput');
+  const name = input.value.trim();
+  if (!name) return;
+  if (state.customFilters.includes(name)) { showNotif('warn','⚠️','Filtro já existe'); return; }
+  
+  state.customFilters.push(name);
+  localStorage.setItem('mailmind_custom_filters', JSON.stringify(state.customFilters));
+  input.value = '';
+  
+  renderFilterBar();
+  renderConfigFilters();
+  showNotif('success','✅',`Filtro "${name}" adicionado`);
+}
+
+function removeCustomFilter(name) {
+  state.customFilters = state.customFilters.filter(f => f !== name);
+  localStorage.setItem('mailmind_custom_filters', JSON.stringify(state.customFilters));
+  renderFilterBar();
+  renderConfigFilters();
+}
+
+function renderConfigFilters() {
+  const list = document.getElementById('configFilterList');
+  if (!list) return;
+  
+  if (state.customFilters.length === 0) {
+    list.innerHTML = '<span style="font-size:12px;color:var(--text3)">Nenhum filtro personalizado.</span>';
+    return;
+  }
+
+  list.innerHTML = state.customFilters.map(f => `
+    <div class="filter-chip" style="cursor:default; padding-right:6px;">
+      ${escHtml(f)}
+      <button onclick="removeCustomFilter('${escHtml(f)}')" style="border:none;background:none;color:var(--text3);cursor:pointer;margin-left:6px;font-weight:bold;">✕</button>
+    </div>
+  `).join('');
+}
+
+// ============================================================
 // FILTERS
 // ============================================================
 function setFilter(filter,btn){
@@ -2254,7 +2317,7 @@ function applyFilters(){
   if(state.currentFolder)emails=emails.filter(e=>e.folder===state.currentFolder);
   else if(state.currentFilter==='unread')emails=emails.filter(e=>e.unread);
   else if(state.currentFilter==='high_importance')emails=emails.filter(e=>e.importance==='high');
-  else if(['Trabalho','Financeiro','Marketing','Pessoal'].includes(state.currentFilter))emails=emails.filter(e=>e.folder===state.currentFilter);
+  else if(state.customFilters.includes(state.currentFilter))emails=emails.filter(e=>e.folder===state.currentFilter);
   if(search)emails=emails.filter(e=>e.subject.toLowerCase().includes(search)||e.from.toLowerCase().includes(search)||e.preview.toLowerCase().includes(search));
   state.filteredEmails=emails;renderEmailList();
 }
