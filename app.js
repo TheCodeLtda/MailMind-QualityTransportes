@@ -1375,6 +1375,7 @@ async function classifyAllEmails() {
 
   showStatus(`Iniciando classificação de ${toProcess.length} e-mails...`);
   let processedCount = 0;
+  const actionSummary = {}; // Armazena contagem por regra: { "Nome da Regra": 5 }
 
   try {
     for(let i=0; i<toProcess.length; i++){
@@ -1394,6 +1395,9 @@ async function classifyAllEmails() {
         // Aplica mudanças apenas se houve match com regra ativa
         email.folder = folder; 
         email.tag = tagMap[folder]||'';
+        
+        // Contabiliza para o relatório final
+        actionSummary[matchedRule.name] = (actionSummary[matchedRule.name] || 0) + 1;
 
         if(state.connected && state.accessToken){
           await moveEmail(email.id, folder);
@@ -1414,7 +1418,14 @@ async function classifyAllEmails() {
       // Delay para respeitar limite da API gratuita (Rate Limit)
       await new Promise(r => setTimeout(r, 2000));
     }
-    showNotif('success','✅',`Classificação concluída! ${processedCount} e-mails processados.`);
+    
+    // Monta mensagem de resumo
+    if (processedCount > 0) {
+      const details = Object.entries(actionSummary).map(([ruleName, count]) => `${count}x via "${ruleName}"`).join(', ');
+      showNotif('success','✅', `Classificados: ${details}`);
+    } else {
+      showNotif('success','✅', `Classificação concluída. Nenhum e-mail movido.`);
+    }
   } catch (e) {
     console.error('Erro no loop de classificação:', e);
     showNotif('error','❌',`Erro durante classificação: ${e.message}`);
@@ -1433,6 +1444,7 @@ async function classifyAllEmails() {
 // Função auxiliar para classificar um lote específico de e-mails (usado no auto-classify)
 async function classifyBatch(emailsToProcess) {
   const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
+  const actionSummary = {};
   showStatus(`Auto-classificando ${emailsToProcess.length} novo(s) e-mail(s)...`);
   
   for(const email of emailsToProcess) {
@@ -1445,6 +1457,8 @@ async function classifyBatch(emailsToProcess) {
       if (matchedRule) {
         email.folder = folder; 
         email.tag = tagMap[folder]||'';
+
+        actionSummary[matchedRule.name] = (actionSummary[matchedRule.name] || 0) + 1;
         
         if(state.connected && state.accessToken) {
           await moveEmail(email.id, folder);
@@ -1461,6 +1475,13 @@ async function classifyBatch(emailsToProcess) {
     } catch(e) { console.error('Erro auto-classify:', e); }
   }
   renderEmailList();
+
+  // Notifica o usuário sobre o que aconteceu automaticamente
+  const moves = Object.entries(actionSummary);
+  if (moves.length > 0) {
+    const details = moves.map(([ruleName, count]) => `${count}x via "${ruleName}"`).join(', ');
+    showNotif('success', '🤖', `Auto-classificação: ${details}`);
+  }
   hideStatus();
 }
 
@@ -1498,7 +1519,7 @@ async function classifySelected() {
   renderEmailList();
   if (state.connected) loadOutlookFolders(); // Atualiza contadores
   hideStatus();
-  showNotif('success','✅',`E-mail classificado como: ${folder}`);
+  showNotif('success','✅',`Movido para "${folder}" pela regra: "${matchedRule.name}"`);
 }
 async function classifyEmail(email) {
   const cfg=loadConfig();
