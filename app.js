@@ -368,14 +368,33 @@ function restoreToken() {
 // ============================================================
 async function loadOutlookFolders() {
   if (!state.accessToken) return;
+  
+  // Função recursiva para buscar pastas e subpastas
+  const fetchRecursive = async (url, level = 0) => {
+    try {
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${state.accessToken}` } });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const items = data.value || [];
+      const result = [];
+      
+      for (const f of items) {
+        f.level = level; // Adiciona nível para indentação
+        result.push(f);
+        
+        if (f.childFolderCount && f.childFolderCount > 0) {
+          const subUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/${f.id}/childFolders?$top=100&$select=id,displayName,unreadItemCount,totalItemCount,childFolderCount&$orderby=displayName`;
+          const children = await fetchRecursive(subUrl, level + 1);
+          result.push(...children);
+        }
+      }
+      return result;
+    } catch(e) { console.warn('Erro ao carregar pasta:', e); return []; }
+  };
+
   try {
-    const res = await fetch(
-      'https://graph.microsoft.com/v1.0/me/mailFolders?$top=100&$select=id,displayName,unreadItemCount,totalItemCount&$orderby=displayName',
-      { headers: { Authorization: `Bearer ${state.accessToken}` } }
-    );
-    if (!res.ok) return;
-    const data = await res.json();
-    state.outlookFolders = data.value || [];
+    const rootUrl = 'https://graph.microsoft.com/v1.0/me/mailFolders?$top=100&$select=id,displayName,unreadItemCount,totalItemCount,childFolderCount&$orderby=displayName';
+    state.outlookFolders = await fetchRecursive(rootUrl);
     renderSidebarFolders(); // Redesenha a sidebar imediatamente com os dados novos
   } catch(e) { console.warn('loadOutlookFolders:', e); }
 }
@@ -406,13 +425,15 @@ function renderSidebarFolders() {
   if (state.useOutlookFolders && state.outlookFolders.length) {
     // Pastas reais do Outlook com menu de contexto
     const colors = ['#7C6EFA','#5DCAA5','#EF9F27','#F0997B','#E24B4A','#4AACE2','#B26EFA'];
-    list.innerHTML = state.outlookFolders.map((f, i) => `
-      <div class="folder-item folder-item-outlook" data-folderid="${f.id}">
+    list.innerHTML = state.outlookFolders.map((f, i) => {
+      const paddingLeft = f.level ? (14 + (f.level * 16)) : 14;
+      return `
+      <div class="folder-item folder-item-outlook" data-folderid="${f.id}" style="padding-left:${paddingLeft}px">
         <div class="folder-dot" style="background:${colors[i % colors.length]}"></div>
         <span class="folder-name" onclick="fetchEmailsByFolder('${f.id}','${escHtml(f.displayName)}')">${escHtml(f.displayName)}</span>
         <span class="folder-count" title="Total de mensagens">${f.totalItemCount || 0}</span>
         <button class="folder-menu-btn" onclick="event.stopPropagation();openFolderMenu('${f.id}','${escHtml(f.displayName)}',this)" title="Opções">•••</button>
-      </div>`).join('') +
+      </div>`;}).join('') +
       `<div class="folder-new-btn" onclick="openNewFolderModal()">+ Nova pasta</div>`;
   } else {
     // Pastas fixas do MailMind — carrega do localStorage ou usa padrão
