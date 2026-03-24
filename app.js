@@ -193,7 +193,6 @@ function loadApp(cfg) {
   renderSidebarFolders();
   renderRules();
   renderEmailList();
-  updateFolderCounts();
   updateUnreadBadge();
   renderChatHistory();
 
@@ -367,7 +366,7 @@ function restoreToken() {
 // ============================================================
 // PASTAS DO OUTLOOK
 // ============================================================
-async function loadOutlookFolders(skipRender = false) {
+async function loadOutlookFolders() {
   if (!state.accessToken) return;
   try {
     const res = await fetch(
@@ -377,13 +376,32 @@ async function loadOutlookFolders(skipRender = false) {
     if (!res.ok) return;
     const data = await res.json();
     state.outlookFolders = data.value || [];
-    if (!skipRender) renderSidebarFolders();
+    renderSidebarFolders(); // Redesenha a sidebar imediatamente com os dados novos
   } catch(e) { console.warn('loadOutlookFolders:', e); }
 }
 
 function renderSidebarFolders() {
   const list = document.getElementById('folderList');
   if (!list) return;
+
+  // Prepara mapa de contagem para acesso rápido (Nome -> Total)
+  // Isso permite que as pastas fixas encontrem seus pares no Outlook
+  const countMap = new Map();
+  if (state.outlookFolders) {
+    state.outlookFolders.forEach(f => {
+      if(f.displayName) countMap.set(f.displayName.toLowerCase(), f.totalItemCount || 0);
+    });
+  }
+
+  // Helper para pegar a contagem correta
+  const getCount = (name) => {
+    // Se conectado, tenta pegar o total real do servidor.
+    if (state.connected && state.accessToken) {
+      return countMap.has(name.toLowerCase()) ? countMap.get(name.toLowerCase()) : 0;
+    }
+    // Modo offline/local: conta apenas o que está na memória
+    return state.emails.filter(e => e.folder === name).length;
+  };
 
   if (state.useOutlookFolders && state.outlookFolders.length) {
     // Pastas reais do Outlook com menu de contexto
@@ -392,7 +410,7 @@ function renderSidebarFolders() {
       <div class="folder-item folder-item-outlook" data-folderid="${f.id}">
         <div class="folder-dot" style="background:${colors[i % colors.length]}"></div>
         <span class="folder-name" onclick="fetchEmailsByFolder('${f.id}','${escHtml(f.displayName)}')">${escHtml(f.displayName)}</span>
-        <span class="folder-count" title="Total de mensagens">${f.totalItemCount ?? 0}</span>
+        <span class="folder-count" title="Total de mensagens">${f.totalItemCount || 0}</span>
         <button class="folder-menu-btn" onclick="event.stopPropagation();openFolderMenu('${f.id}','${escHtml(f.displayName)}',this)" title="Opções">•••</button>
       </div>`).join('') +
       `<div class="folder-new-btn" onclick="openNewFolderModal()">+ Nova pasta</div>`;
@@ -407,15 +425,17 @@ function renderSidebarFolders() {
         { name:'Outros',     color:'#888780' },
       ];
     }
-    list.innerHTML = state.fixedFolders.map(f => `
+    list.innerHTML = state.fixedFolders.map(f => {
+      const count = getCount(f.name);
+      return `
       <div class="folder-item folder-item-fixed" data-foldername="${escHtml(f.name)}">
         <div class="folder-dot" style="background:${f.color}"></div>
         <span class="folder-name" onclick="filterByFolder('${escHtml(f.name)}')">${escHtml(f.name)}</span>
-        <span class="folder-count" id="cnt-${escHtml(f.name)}"></span>
+        <span class="folder-count" title="Total de mensagens">${count}</span>
         <button class="folder-menu-btn" onclick="event.stopPropagation();openFixedFolderMenu(event,'${escHtml(f.name)}')" title="Opções">•••</button>
-      </div>`).join('') +
+      </div>`;
+    }).join('') +
       `<div class="folder-new-btn" onclick="addFixedFolder()">+ Nova pasta</div>`;
-    updateFolderCounts();
   }
 }
 
@@ -563,7 +583,6 @@ async function deleteFixedFolder(name) {
   saveFixedFolders();
   renderSidebarFolders();
   renderEmailList();
-  updateFolderCounts();
 
   // Sincroniza com Outlook
   if (state.connected && state.accessToken) {
@@ -999,7 +1018,7 @@ async function fetchEmails(url) {
     
     // Atualiza estatísticas das pastas sempre que carregar e-mails (para ter contadores reais atualizados)
     if (state.accessToken) {
-      await loadOutlookFolders(true);
+      loadOutlookFolders();
     }
 
     // Busca total de não lidos (apenas na primeira página)
@@ -1010,7 +1029,6 @@ async function fetchEmails(url) {
     }
 
     renderEmailList();
-    updateFolderCounts();
     updateUnreadBadge();
     renderPagination();
     hideStatus();
@@ -1632,7 +1650,6 @@ function moveSelected(folder) {
   state.selectedEmail = null;
   
   renderEmailList(); 
-  updateFolderCounts();
   
   document.getElementById('detailTab').innerHTML=`
     <div style="display:flex;align-items:center;justify-content:center;height:200px;flex-direction:column;gap:12px;">
@@ -1990,47 +2007,6 @@ function applyFilters(){
   if(search)emails=emails.filter(e=>e.subject.toLowerCase().includes(search)||e.from.toLowerCase().includes(search)||e.preview.toLowerCase().includes(search));
   state.filteredEmails=emails;renderEmailList();
 }
-function updateFolderCounts(){
-  // Cria mapa de estatísticas reais do Outlook (Total de itens)
-  const outlookStats = {};
-  if (state.accessToken && state.outlookFolders) {
-    state.outlookFolders.forEach(f => {
-      // Mapeia nome minúsculo -> totalItemCount
-      outlookStats[f.displayName.toLowerCase()] = f.totalItemCount;
-    });
-  }
-
-  let itemsToUpdate = [];
-
-  if (state.useOutlookFolders && state.outlookFolders && state.outlookFolders.length > 0) {
-    // Modo Outlook: usa dados diretos da API
-    itemsToUpdate = state.outlookFolders.map(f => ({
-      idName: f.displayName, // Nome usado no ID do HTML
-      count: f.totalItemCount ?? 0
-    }));
-  } else {
-    // Modo Local/Fixo: tenta cruzar com dados do Outlook para pegar o total real
-    const folders = state.fixedFolders || [];
-    itemsToUpdate = folders.map(f => {
-      // Se a pasta existe no Outlook, usa o total do servidor. Se não, usa contagem local.
-      const remoteTotal = outlookStats[f.name.toLowerCase()];
-      const count = remoteTotal !== undefined ? remoteTotal : state.emails.filter(e => e.folder === f.name).length;
-      return { idName: f.name, count: count };
-    });
-  }
-
-  // Loop para preencher o contador visível ao usuário
-  itemsToUpdate.forEach(item => {
-    // Reconstrói o ID usado no HTML: cnt-NomeDaPasta
-    const elId = 'cnt-' + escHtml(item.idName); 
-    const el = document.getElementById(elId);
-    if(el) {
-      el.textContent = item.count;
-      // Garante que 0 seja visível se desejado, ou ajuste estilos aqui
-      el.style.display = 'inline-block'; 
-    }
-  });
-}
 function updateUnreadBadge(){
   const count = state.emails.filter(e=>e.unread).length;
   document.getElementById('unreadBadge').textContent = count;
@@ -2282,7 +2258,6 @@ async function checkNewEmails() {
     state.filteredEmails = [...toAdd, ...state.filteredEmails];
 
     renderEmailList();
-    updateFolderCounts();
     updateUnreadBadge();
     renderPagination();
     
