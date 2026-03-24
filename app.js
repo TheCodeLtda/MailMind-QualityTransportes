@@ -997,8 +997,8 @@ async function fetchEmails(url) {
     state.filteredEmails = [...state.emails];
     state.page.nextLink  = data['@odata.nextLink'] || null;
     
-    // Atualiza estatísticas das pastas (sem redesenhar menu) para ter contadores reais
-    if (state.useOutlookFolders && state.accessToken) {
+    // Atualiza estatísticas das pastas sempre que carregar e-mails (para ter contadores reais atualizados)
+    if (state.accessToken) {
       await loadOutlookFolders(true);
     }
 
@@ -1991,22 +1991,32 @@ function applyFilters(){
   state.filteredEmails=emails;renderEmailList();
 }
 function updateFolderCounts(){
-  // Define a lista de pastas e seus contadores com base no modo atual
+  // Cria mapa de estatísticas reais do Outlook (Total de itens)
+  const outlookStats = {};
+  if (state.accessToken && state.outlookFolders) {
+    state.outlookFolders.forEach(f => {
+      // Mapeia nome minúsculo -> totalItemCount
+      outlookStats[f.displayName.toLowerCase()] = f.totalItemCount;
+    });
+  }
+
   let itemsToUpdate = [];
 
   if (state.useOutlookFolders && state.outlookFolders && state.outlookFolders.length > 0) {
-    // Modo Outlook: usa dados da API
+    // Modo Outlook: usa dados diretos da API
     itemsToUpdate = state.outlookFolders.map(f => ({
       idName: f.displayName, // Nome usado no ID do HTML
       count: f.totalItemCount ?? 0
     }));
   } else {
-    // Modo Local/Fixo: calcula com base no que está na memória
+    // Modo Local/Fixo: tenta cruzar com dados do Outlook para pegar o total real
     const folders = state.fixedFolders || [];
-    itemsToUpdate = folders.map(f => ({
-      idName: f.name,
-      count: state.emails.filter(e => e.folder === f.name).length
-    }));
+    itemsToUpdate = folders.map(f => {
+      // Se a pasta existe no Outlook, usa o total do servidor. Se não, usa contagem local.
+      const remoteTotal = outlookStats[f.name.toLowerCase()];
+      const count = remoteTotal !== undefined ? remoteTotal : state.emails.filter(e => e.folder === f.name).length;
+      return { idName: f.name, count: count };
+    });
   }
 
   // Loop para preencher o contador visível ao usuário
