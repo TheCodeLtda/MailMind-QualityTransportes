@@ -70,7 +70,7 @@ function showNotif(type,icon,text) {
 // ============================================================
 const state = {
   connected:false, accessToken:null, emails:[], filteredEmails:[],
-  selectedEmail:null, currentFilter:'all', currentFolder:null,
+  selectedEmail:null, currentFilter:'all', currentFolder:null, isClassifying: false,
   currentView:'emails', rules:[], config:{}, chatHistory:[],
   page: { current:1, nextLink:null, prevLinks:[], total:null, pageSize:50 },
   outlookFolders: [],
@@ -1274,43 +1274,75 @@ async function testGeminiConnection() {
 // ============================================================
 async function classifyAllEmails() {
   const cfg=loadConfig();
-  if(!cfg.claudeApiKey){showNotif('error','❌','Configure a chave da API');return;}
+  if(!cfg.claudeApiKey){showNotif('error','❌','Configure a chave da API nas configurações.');return;}
 
-  const toProcess=state.emails.slice(0,cfg.batchSize||5);
+  // 1. Verifica se há regras ativas
+  const activeRules = state.rules.filter(r => r.active);
+  if (activeRules.length === 0) {
+    showNotif('warn', '⚠️', 'Nenhuma regra de IA está ativa. Ative regras no menu lateral antes de classificar.');
+    return;
+  }
+
+  if (state.isClassifying) { showNotif('warn','⏳','Classificação já em andamento...'); return; }
+  state.isClassifying = true;
+
+  // Snapshot dos e-mails a processar (evita erros se a lista mudar durante o processo)
+  // Filtra apenas os que estão na pasta atual ou "Outros" se estiver na raiz, para não mover o que já está certo
+  // Aqui pegamos um lote baseado na configuração
+  const batchSize = cfg.batchSize || 10;
+  const toProcess = [...state.emails].slice(0, batchSize);
+  
   const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
 
-  const btn = document.querySelector('.classify-btn');
-  const originalText = btn?.textContent;
+  showStatus(`Iniciando classificação de ${toProcess.length} e-mails...`);
+  let processedCount = 0;
 
-  for(let i=0;i<toProcess.length;i++){
-    const email=toProcess[i];
-    try {
-        if (btn) btn.textContent = `Classificando ${i+1}/${toProcess.length}...`;
-        showStatus(`Classificando e-mail ${i+1}/${toProcess.length}...`);
-        const folder=await classifyEmail(email);
-        email.folder=folder; email.tag=tagMap[folder]||'';
-        if(state.connected&&state.accessToken){
+  try {
+    for(let i=0; i<toProcess.length; i++){
+      const email = toProcess[i];
+      
+      // Atualiza progresso na barra global (visível em qualquer tela)
+      showStatus(`Classificando ${i+1}/${toProcess.length}: ${email.subject.substring(0,20)}...`);
+      
+      const folder = await classifyEmail(email);
+      
+      // Aplica mudanças
+      email.folder = folder; 
+      email.tag = tagMap[folder]||'';
+
+      if(state.connected && state.accessToken){
         await moveEmail(email.id, folder);
         // Executa ação automática da regra correspondente
         const rule = state.rules.find(r => r.active && r.folder === folder && r.action && r.action !== 'none');
         if (rule) await executeRuleAction(email, rule);
-        }
-        // Remove o e-mail da lista local para não reaparecer
-        state.emails = state.emails.filter(e => e.id !== email.id);
-        state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
-        // Delay para respeitar limite da API gratuita (Rate Limit)
-        await new Promise(r => setTimeout(r, 4000));
-    } catch (e) {
-        console.error(`Erro ao classificar email ${i+1}:`, e);
-        // Não interrompe o loop, apenas segue para o próximo
-    }
-    renderEmailList();
-  }
+      }
 
-  state.filteredEmails=[...state.emails];
-  renderEmailList(); updateFolderCounts(); hideStatus();
-  if (btn) btn.textContent = originalText;
-  showNotif('success','✅',`${toProcess.length} e-mails classificados!`);
+      // Remove da visualização atual se estivermos vendo a lista (feedback visual instantâneo)
+      // Mas só removemos do array global no final ou manipulamos aqui com cuidado
+      state.emails = state.emails.filter(e => e.id !== email.id);
+      state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
+      
+      // Se o usuário estiver na tela de e-mails, atualiza a lista em tempo real
+      if (state.currentView === 'emails') renderEmailList();
+
+      processedCount++;
+      // Delay para respeitar limite da API gratuita (Rate Limit)
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    showNotif('success','✅',`Classificação concluída! ${processedCount} e-mails processados.`);
+  } catch (e) {
+    console.error('Erro no loop de classificação:', e);
+    showNotif('error','❌',`Erro durante classificação: ${e.message}`);
+  } finally {
+    state.isClassifying = false;
+    hideStatus();
+    // Atualização final para garantir consistência
+    if (state.currentView === 'emails') {
+      renderEmailList();
+      // Atualiza contadores das pastas (função nova implementada anteriormente)
+      if (state.connected) loadOutlookFolders(); 
+    }
+  }
 }
 
 // Função auxiliar para classificar um lote específico de e-mails (usado no auto-classify)
