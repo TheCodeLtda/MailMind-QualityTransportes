@@ -1724,14 +1724,8 @@ async function renderEmailBody(email) {
   if(!area) return;
   let html=email.bodyHtml||'';
   if(html) {
-    if(state.accessToken&&email.hasAttachments) html=await resolveCidImages(email.id,html);
-    // Remove apenas scripts e handlers — preserva estilos e cores originais do e-mail
-    html=html
-      .replace(/<script[\s\S]*?<\/script>/gi,'')
-      // Força HTTPS em imagens para evitar Mixed Content (backup caso meta tag não pegue tudo)
-      .replace(/http:\/\/admin.protection.outlook.com/gi, 'https://admin.protection.outlook.com')
-      .replace(/\son\w+\s*=\s*["'][^"']*["']/gi,'')
-      .replace(/javascript:/gi,'');
+    // Processamento completo: Sanitização + CIDs + HTTPS + Estilos
+    html = await processEmailHtml(email.id, html, email.hasAttachments);
 
     area.innerHTML='';
     const iframe=document.createElement('iframe');
@@ -1740,18 +1734,10 @@ async function renderEmailBody(email) {
     iframe.setAttribute('scrolling','no');
     area.appendChild(iframe);
 
-    // Injeta o HTML completo do e-mail com estilos originais intactos
     const doc=iframe.contentDocument||iframe.contentWindow.document;
     doc.open();
-    doc.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-      <style>
-        html,body{margin:0;padding:8px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:14px;line-height:1.6;}
-        img{max-width:100%!important;height:auto!important;}
-        table{max-width:100%!important;}
-        a{word-break:break-all;}
-        *{box-sizing:border-box;}
-      </style>
-    </head><body>${html}</body></html>`);
+    // O HTML já vem completo e sanitizado de processEmailHtml
+    doc.write(html);
     doc.close();
 
     // Auto-resize robusto
@@ -1769,76 +1755,93 @@ async function renderEmailBody(email) {
     area.innerHTML=`<div class="detail-body">${escHtml(email.bodyText||email.preview||'').replace(/\n/g,'<br>')}</div>`;
   }
 }
-async function resolveCidImages(emailId, html) {
+async function processEmailHtml(emailId, html, hasAttachments) {
   if (!html) return '';
-  if (!/cid:/i.test(html)) return html;
-  try {
-    const attachments = await fetchAttachments(emailId);
-    if (!attachments || attachments.length === 0) return html;
+  
+  // DOMParser para manipulação segura e robusta
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
 
-    // Cria um mapa para busca rápida: Chave (CID/Nome) -> DataURL
-    const cidMap = new Map();
-    
-    // Helper para normalizar (remove < > do Outlook)
-    const normalize = (s) => (s || '').replace(/^<|>$/g, '').trim();
+  // 1. Sanitização: Remove scripts, objetos e iframes (segurança + evita erros de console)
+  doc.querySelectorAll('script, object, embed, iframe, meta[http-equiv="refresh"]').forEach(el => el.remove());
 
-    for (const att of attachments) {
-      if (att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentBytes) {
-        const type = att.contentType || 'application/octet-stream';
-        const dataUrl = `data:${type};base64,${att.contentBytes}`;
-        
-        if (att.contentId) {
-          const raw = att.contentId;
-          const norm = normalize(raw);
-          // Mapeia original, normalizado e versões em lowercase para garantir match
-          cidMap.set(raw, dataUrl);
-          cidMap.set(norm, dataUrl);
-          cidMap.set(raw.toLowerCase(), dataUrl);
-          cidMap.set(norm.toLowerCase(), dataUrl);
-        }
-        if (att.name) cidMap.set(att.name, dataUrl);
-      }
-    }
-
-    // Usa DOMParser para manipular o HTML de forma segura e estruturada
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    
-    // Seleciona qualquer elemento com atributo src
-    const elements = doc.querySelectorAll('[src]');
-    let modified = false;
-
-    elements.forEach(el => {
-      const rawSrc = el.getAttribute('src');
-      if (!rawSrc || !rawSrc.trim().toLowerCase().startsWith('cid:')) return;
-      
-      // Remove o prefixo 'cid:' para buscar a chave
-      const cid = rawSrc.replace(/^cid:/i, '').trim();
-      
-      // Tenta encontrar match exato, decodificado ou normalizado
-      let val = cidMap.get(cid);
-      if (!val) try { val = cidMap.get(decodeURIComponent(cid)); } catch {}
-      if (!val) val = cidMap.get(normalize(cid));
-      if (!val) val = cidMap.get(cid.toLowerCase()); // Tenta lowercase
-      if (!val) val = cidMap.get(normalize(cid).toLowerCase());
-
-      if (val) {
-        el.setAttribute('src', val);
-        modified = true;
-      } else {
-        // Se não encontrou, remove o src para evitar o erro "ERR_UNKNOWN_URL_SCHEME" no console
-        el.removeAttribute('src');
-        el.setAttribute('data-broken-cid', cid);
-        el.setAttribute('alt', '[Imagem não disponível]');
-        modified = true;
+  // 2. Remove handlers de eventos (on* attributes)
+  doc.querySelectorAll('*').forEach(el => {
+    Array.from(el.attributes).forEach(attr => {
+      if (attr.name.toLowerCase().startsWith('on') || attr.value.toLowerCase().includes('javascript:')) {
+        el.removeAttribute(attr.name);
       }
     });
-    
-    // Se houve alteração, retorna o HTML atualizado (incluindo estrutura completa para preservar styles do head)
-    if (modified) return doc.documentElement.outerHTML;
+  });
 
-  } catch (e) { console.warn('resolveCidImages:', e); }
-  return html;
+  // 3. Resolve CIDs (Imagens inline)
+  // Busca anexos apenas se houver 'cid:' no HTML E o e-mail tiver anexos
+  if (hasAttachments && state.accessToken && /cid:/i.test(html)) {
+  try {
+    const attachments = await fetchAttachments(emailId);
+      if (attachments && attachments.length > 0) {
+        const cidMap = new Map();
+        const normalize = (s) => (s || '').replace(/^<|>$/g, '').trim();
+
+        for (const att of attachments) {
+          if (att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentBytes) {
+            const type = att.contentType || 'application/octet-stream';
+            const dataUrl = `data:${type};base64,${att.contentBytes}`;
+            const raw = att.contentId;
+            if (raw) {
+              cidMap.set(raw, dataUrl);
+              cidMap.set(normalize(raw), dataUrl);
+              try { cidMap.set(decodeURIComponent(raw), dataUrl); } catch {}
+            }
+            if (att.name) cidMap.set(att.name, dataUrl);
+          }
+        }
+
+        // Substitui src
+        doc.querySelectorAll('[src]').forEach(el => {
+          const src = el.getAttribute('src');
+          if (src && src.toLowerCase().startsWith('cid:')) {
+            const cid = src.substring(4).trim(); // remove 'cid:'
+            let val = cidMap.get(cid) || cidMap.get(normalize(cid));
+            
+            if (val) {
+              el.setAttribute('src', val);
+            } else {
+              // Remove src para evitar erro de console ERR_UNKNOWN_URL_SCHEME
+              el.removeAttribute('src');
+            }
+          }
+        });
+      }
+    } catch(e) { console.warn('Erro CID:', e); }
+  }
+
+  // 4. Se ainda sobraram src="cid:..." (ex: sem anexos ou erro no fetch), remove para limpar console
+  doc.querySelectorAll('[src^="cid:"], [src^="CID:"]').forEach(el => el.removeAttribute('src'));
+
+  // 5. Mixed Content Fix
+  doc.querySelectorAll('[src^="http:"]').forEach(el => {
+    const s = el.getAttribute('src');
+    if (s.includes('protection.outlook.com')) el.setAttribute('src', s.replace('http:', 'https:'));
+  });
+
+  // 6. Injeta Estilos Padrão para Iframe
+  const style = doc.createElement('style');
+  style.textContent = `
+    html,body{margin:0;padding:8px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:14px;line-height:1.6;}
+    img{max-width:100%!important;height:auto!important;}
+    table{max-width:100%!important;}
+    a{word-break:break-all;}
+    *{box-sizing:border-box;}
+  `;
+  // Garante que existe head
+  if (!doc.head) {
+    const head = doc.createElement('head');
+    doc.documentElement.insertBefore(head, doc.body);
+  }
+  doc.head.appendChild(style);
+
+  return doc.documentElement.outerHTML;
 }
 async function loadAndRenderAttachments(email) {
   const area=document.getElementById('attachmentsArea'); if(!area) return;
