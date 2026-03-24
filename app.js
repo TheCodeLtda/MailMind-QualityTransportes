@@ -1365,13 +1365,19 @@ async function classifySelected() {
 async function classifyEmail(email) {
   const cfg=loadConfig();
   if(!cfg.claudeApiKey) return email.folder||'Outros';
-  const rulesText=state.rules.filter(r=>r.active).map(r=>`- Pasta "${r.folder}": ${r.criteria}`).join('\n');
+  
+  const activeRules = state.rules.filter(r => r.active);
+  if (activeRules.length === 0) return 'Outros';
+
+  const rulesText=activeRules.map(r=>`- Pasta "${r.folder}": ${r.criteria}`).join('\n');
   const bodyText=email.bodyText||stripHtml(email.bodyHtml||'')||email.preview||'';
   const prompt=`Classifique este e-mail. Responda APENAS com o nome da pasta.\n\nRegras:\n${rulesText}\n- "Outros": demais casos\n\nRemetente: ${email.from}\nAssunto: ${email.subject}\nCorpo: ${bodyText.substring(0,800)}\n\nPasta:`;
   try {
     const res=await geminiApi([{role:'user', parts:[{text:prompt}]}]);
     const text=res.candidates?.[0]?.content?.parts?.[0]?.text?.trim()||'Outros';
-    return ['Financeiro','Trabalho','Marketing','Pessoal','Outros'].find(f=>text.includes(f))||'Outros';
+    // Valida se a resposta corresponde a uma regra ativa (ou Outros)
+    const allowed = [...new Set(activeRules.map(r => r.folder).concat(['Outros']))];
+    return allowed.find(f=>text.includes(f))||'Outros';
   } catch { return 'Outros'; }
 }
 async function summarizeSelected() {
