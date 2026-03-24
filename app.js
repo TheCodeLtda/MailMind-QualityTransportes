@@ -1724,38 +1724,40 @@ async function renderEmailBody(email) {
   if(!area) return;
   let html=email.bodyHtml||'';
   if(html) {
-    // Processamento completo: Sanitização + CIDs + HTTPS + Estilos
-    html = await processEmailHtml(email.id, html, email.hasAttachments);
+    // Mostra loading enquanto processa imagens e anexos
+    area.innerHTML = '<div class="body-loading"><div class="spinner"></div> Processando conteúdo...</div>';
+
+    // Processamento completo: Sanitização + CIDs + HTTPS + Estilos (Passando objeto email completo)
+    html = await processEmailHtml(email);
 
     area.innerHTML='';
     const iframe=document.createElement('iframe');
     iframe.className='email-iframe';
+    // Sandbox sem 'allow-scripts' para garantir segurança e silenciar console.
+    // allow-same-origin necessário para o resize automático funcionar (acesso ao contentDocument)
     iframe.setAttribute('sandbox','allow-same-origin allow-popups');
     iframe.setAttribute('scrolling','no');
+    // srcdoc carrega o conteúdo estático já processado
+    iframe.srcdoc = html;
     area.appendChild(iframe);
 
-    const doc=iframe.contentDocument||iframe.contentWindow.document;
-    doc.open();
-    // O HTML já vem completo e sanitizado de processEmailHtml
-    doc.write(html);
-    doc.close();
-
-    // Auto-resize robusto
-    const resize=()=>{
+    // Auto-resize via onload do iframe
+    iframe.onload = () => {
       try{
-        const h=doc.body.scrollHeight;
-        if(h>0) iframe.style.height=(h+24)+'px';
-      }catch{}
+        const doc = iframe.contentDocument;
+        if (doc && doc.body) {
+          const h = doc.body.scrollHeight;
+          if(h > 0) iframe.style.height = (h + 30) + 'px';
+        }
+      } catch(e) { console.warn('Resize bloqueado:', e); }
     };
-    iframe.onload=resize;
-    setTimeout(resize,200);
-    setTimeout(resize,600);
-    setTimeout(resize,1500);
   } else {
     area.innerHTML=`<div class="detail-body">${escHtml(email.bodyText||email.preview||'').replace(/\n/g,'<br>')}</div>`;
   }
 }
-async function processEmailHtml(emailId, html, hasAttachments) {
+
+async function processEmailHtml(email) {
+  let html = email.bodyHtml || '';
   if (!html) return '';
   
   // DOMParser para manipulação segura e robusta
@@ -1763,7 +1765,7 @@ async function processEmailHtml(emailId, html, hasAttachments) {
   const doc = parser.parseFromString(html, 'text/html');
 
   // 1. Sanitização: Remove scripts, objetos e iframes (segurança + evita erros de console)
-  doc.querySelectorAll('script, object, embed, iframe, meta[http-equiv="refresh"]').forEach(el => el.remove());
+  doc.querySelectorAll('script, object, embed, iframe, base, meta[http-equiv="refresh"]').forEach(el => el.remove());
 
   // 2. Remove handlers de eventos (on* attributes)
   doc.querySelectorAll('*').forEach(el => {
@@ -1775,13 +1777,14 @@ async function processEmailHtml(emailId, html, hasAttachments) {
   });
 
   // 3. Resolve CIDs (Imagens inline)
-  // Busca anexos apenas se houver 'cid:' no HTML E o e-mail tiver anexos
-  if (hasAttachments && state.accessToken && /cid:/i.test(html)) {
+  // Verifica se há cid: no texto. Se tiver, busca anexos mesmo se hasAttachments for false (pra garantir)
+  if (state.accessToken && /cid:/i.test(html)) {
   try {
-    const attachments = await fetchAttachments(emailId);
+      const attachments = await fetchAttachments(email.id);
       if (attachments && attachments.length > 0) {
         const cidMap = new Map();
-        const normalize = (s) => (s || '').replace(/^<|>$/g, '').trim();
+        // Normaliza removendo < > e trim
+        const normalize = (s) => (s || '').replace(/^<|>$/g, '').trim().toLowerCase();
 
         for (const att of attachments) {
           if (att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentBytes) {
@@ -1789,8 +1792,9 @@ async function processEmailHtml(emailId, html, hasAttachments) {
             const dataUrl = `data:${type};base64,${att.contentBytes}`;
             const raw = att.contentId;
             if (raw) {
+              // Mapeia diversas variações para garantir match
               cidMap.set(raw, dataUrl);
-              cidMap.set(normalize(raw), dataUrl);
+              cidMap.set(normalize(raw), dataUrl); // lowercase sem <>
               try { cidMap.set(decodeURIComponent(raw), dataUrl); } catch {}
             }
             if (att.name) cidMap.set(att.name, dataUrl);
@@ -1800,15 +1804,21 @@ async function processEmailHtml(emailId, html, hasAttachments) {
         // Substitui src
         doc.querySelectorAll('[src]').forEach(el => {
           const src = el.getAttribute('src');
-          if (src && src.toLowerCase().startsWith('cid:')) {
+          if (src && src.toLowerCase().trim().startsWith('cid:')) {
             const cid = src.substring(4).trim(); // remove 'cid:'
+            // Tenta achar exato ou normalizado
             let val = cidMap.get(cid) || cidMap.get(normalize(cid));
+            // Tenta decodificar URI se falhou (ex: image%2001.jpg)
+            if (!val) { try { val = cidMap.get(decodeURIComponent(cid)); } catch {} }
             
             if (val) {
               el.setAttribute('src', val);
             } else {
               // Remove src para evitar erro de console ERR_UNKNOWN_URL_SCHEME
+              // Substitui por pixel transparente para não ficar ícone de quebrado
               el.removeAttribute('src');
+              el.setAttribute('src', 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
+              el.setAttribute('alt', ''); 
             }
           }
         });
@@ -1817,15 +1827,24 @@ async function processEmailHtml(emailId, html, hasAttachments) {
   }
 
   // 4. Se ainda sobraram src="cid:..." (ex: sem anexos ou erro no fetch), remove para limpar console
-  doc.querySelectorAll('[src^="cid:"], [src^="CID:"]').forEach(el => el.removeAttribute('src'));
+  doc.querySelectorAll('[src]').forEach(el => {
+    const s = el.getAttribute('src');
+    if (s && s.toLowerCase().startsWith('cid:')) {
+      el.removeAttribute('src');
+      el.setAttribute('src', 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
+    }
+  });
 
   // 5. Mixed Content Fix
   doc.querySelectorAll('[src^="http:"]').forEach(el => {
     const s = el.getAttribute('src');
-    if (s.includes('protection.outlook.com')) el.setAttribute('src', s.replace('http:', 'https:'));
+    if (s.includes('outlook') || s.includes('microsoft')) el.setAttribute('src', s.replace('http:', 'https:'));
   });
 
-  // 6. Injeta Estilos Padrão para Iframe
+  // 6. Força links externos para nova aba
+  doc.querySelectorAll('a').forEach(a => a.setAttribute('target', '_blank'));
+
+  // 7. Injeta Estilos Padrão para Iframe
   const style = doc.createElement('style');
   style.textContent = `
     html,body{margin:0;padding:8px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:14px;line-height:1.6;}
