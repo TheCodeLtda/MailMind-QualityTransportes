@@ -367,7 +367,7 @@ function restoreToken() {
 // ============================================================
 // PASTAS DO OUTLOOK
 // ============================================================
-async function loadOutlookFolders() {
+async function loadOutlookFolders(skipRender = false) {
   if (!state.accessToken) return;
   try {
     const res = await fetch(
@@ -377,7 +377,7 @@ async function loadOutlookFolders() {
     if (!res.ok) return;
     const data = await res.json();
     state.outlookFolders = data.value || [];
-    renderSidebarFolders();
+    if (!skipRender) renderSidebarFolders();
   } catch(e) { console.warn('loadOutlookFolders:', e); }
 }
 
@@ -996,6 +996,11 @@ async function fetchEmails(url) {
     state.emails         = data.value.map(buildEmailObj);
     state.filteredEmails = [...state.emails];
     state.page.nextLink  = data['@odata.nextLink'] || null;
+    
+    // Atualiza estatísticas das pastas (sem redesenhar menu) para ter contadores reais
+    if (state.useOutlookFolders && state.accessToken) {
+      await loadOutlookFolders(true);
+    }
 
     // Busca total de não lidos (apenas na primeira página)
     if (!url) {
@@ -1986,28 +1991,33 @@ function applyFilters(){
   state.filteredEmails=emails;renderEmailList();
 }
 function updateFolderCounts(){
-  if (state.useOutlookFolders) return; // No modo Outlook, usamos os contadores da API (totalItemCount), não o local
-  
-  const folders = state.fixedFolders || [
-    {name:'Trabalho'},{name:'Financeiro'},{name:'Marketing'},{name:'Pessoal'},{name:'Outros'}
-  ];
+  // Define a lista de pastas e seus contadores com base no modo atual
+  let itemsToUpdate = [];
 
-  // Mapa de contagem real do Outlook (para exibir o total do servidor, não apenas o local)
-  const outlookMap = new Map();
-  if (state.outlookFolders) {
-    state.outlookFolders.forEach(f => outlookMap.set(f.displayName.toLowerCase(), f.totalItemCount));
+  if (state.useOutlookFolders && state.outlookFolders && state.outlookFolders.length > 0) {
+    // Modo Outlook: usa dados da API
+    itemsToUpdate = state.outlookFolders.map(f => ({
+      idName: f.displayName, // Nome usado no ID do HTML
+      count: f.totalItemCount ?? 0
+    }));
+  } else {
+    // Modo Local/Fixo: calcula com base no que está na memória
+    const folders = state.fixedFolders || [];
+    itemsToUpdate = folders.map(f => ({
+      idName: f.name,
+      count: state.emails.filter(e => e.folder === f.name).length
+    }));
   }
 
-  folders.forEach(f=>{
-    const el=document.getElementById('cnt-'+f.name);
+  // Loop para preencher o contador visível ao usuário
+  itemsToUpdate.forEach(item => {
+    // Reconstrói o ID usado no HTML: cnt-NomeDaPasta
+    const elId = 'cnt-' + escHtml(item.idName); 
+    const el = document.getElementById(elId);
     if(el) {
-      // Se tivermos a contagem real do Outlook, usamos ela. Se não, fallback para local.
-      if (state.connected && outlookMap.has(f.name.toLowerCase())) {
-        const count = outlookMap.get(f.name.toLowerCase());
-        el.textContent = count !== undefined ? count : '';
-      } else {
-        el.textContent = state.emails.filter(e=>e.folder===f.name).length || '';
-      }
+      el.textContent = item.count;
+      // Garante que 0 seja visível se desejado, ou ajuste estilos aqui
+      el.style.display = 'inline-block'; 
     }
   });
 }
