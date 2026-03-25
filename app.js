@@ -543,7 +543,7 @@ async function fetchEmailsByFolder(folderId, folderName) {
   try {
     const res = await fetch(
       `https://graph.microsoft.com/v1.0/me/mailFolders/${folderId}/messages` +
-      `?$top=50&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance` +
+      `?$top=50&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance,conversationId` +
       `&$orderby=receivedDateTime desc`,
       { headers: { Authorization: `Bearer ${state.accessToken}`, 'Prefer':'outlook.body-content-type="html"' } }
     );
@@ -1028,6 +1028,7 @@ function buildEmailObj(m) {
     date:m.receivedDateTime, dateFormatted:formatDate(m.receivedDateTime),
     unread:!m.isRead, hasAttachments:m.hasAttachments||false,
     importance:m.importance||'normal', folder:'Outros', tag:'', attachments:null,
+    conversationId: m.conversationId,
   };
 }
 
@@ -1061,7 +1062,7 @@ async function loadSpecialFolder(folderKey) {
   showStatus(`Carregando ${name}...`);
   try {
     const url = `https://graph.microsoft.com/v1.0/me/mailFolders/${folderKey}/messages`
-      + `?$top=50&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance`
+      + `?$top=50&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance,conversationId`
       + `&$orderby=receivedDateTime desc`;
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${state.accessToken}`, 'Prefer':'outlook.body-content-type="html"' }
@@ -1078,7 +1079,7 @@ async function loadSpecialFolder(folderKey) {
 
 const BASE_URL  = 'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages'
   + `?$top=${PAGE_SIZE}`
-  + '&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance'
+  + '&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance,conversationId'
   + '&$orderby=receivedDateTime desc';
 
 async function fetchEmails(url) {
@@ -1576,18 +1577,52 @@ async function classifyEmail(email) {
 }
 async function summarizeSelected() {
   if(!state.selectedEmail) return;
-  document.getElementById('aiSummaryBox').style.display='block';
-  document.getElementById('aiSummaryText').textContent='Gerando resumo...';
+  const summaryBox = document.getElementById('aiSummaryBox');
+  const summaryText = document.getElementById('aiSummaryText');
+  
+  summaryBox.style.display='block';
+  summaryText.textContent='Analisando histórico da conversa...';
+  
   const cfg=loadConfig();
-  if(!cfg.claudeApiKey){document.getElementById('aiSummaryText').textContent='Configure a chave da API.';return;}
-  const email=state.selectedEmail;
-  const bodyText=email.bodyText||stripHtml(email.bodyHtml||'')||email.preview||'';
-  const prompt=`Faça um resumo executivo em português (considere o texto e o conteúdo dos anexos visualizados), 2-3 frases. Destaque o ponto principal e ação necessária.\n\nDe: ${email.fromName} <${email.from}>\nAssunto: ${email.subject}\nCorpo:\n${bodyText.substring(0,1500)}`;
+  if(!cfg.claudeApiKey){summaryText.textContent='Configure a chave da API.';return;}
+  
+  const email = state.selectedEmail;
+  
   try {
+    let contextText = "";
+    
+    // Se o e-mail faz parte de uma conversa, busca as mensagens anteriores para dar contexto à IA
+    if (state.accessToken && email.conversationId) {
+      try {
+        const res = await fetch(
+          `https://graph.microsoft.com/v1.0/me/messages?$filter=conversationId eq '${email.conversationId}'&$select=from,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime asc`,
+          { headers: { Authorization: `Bearer ${state.accessToken}`, 'Prefer': 'outlook.body-content-type="text"' } }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          contextText = (data.value || []).map(m => {
+            const sender = m.from?.emailAddress?.name || m.from?.emailAddress?.address || "Desconhecido";
+            const date = new Date(m.receivedDateTime).toLocaleString('pt-BR');
+            return `--- Mensagem de ${sender} em ${date} ---\n${m.body?.content || m.bodyPreview}`;
+          }).join('\n\n');
+        }
+      } catch (e) { console.warn("Erro ao buscar thread:", e); }
+    }
+
+    // Fallback se não conseguir a thread
+    if (!contextText) {
+      const bodyText = email.bodyText || stripHtml(email.bodyHtml || '') || email.preview || '';
+      contextText = `De: ${email.fromName} <${email.from}>\nAssunto: ${email.subject}\nCorpo:\n${bodyText}`;
+    }
+
+    const prompt = `Analise o fluxo desta conversa de e-mail e faça um resumo executivo em português (2-3 frases). Destaque a cronologia dos fatos, as decisões tomadas e o status atual da solicitação. Se houver anexos, considere o conteúdo deles no contexto da conversa.\n\nHISTÓRICO DA CONVERSA:\n${contextText.substring(0, 10000)}`;
+
     const parts = await getAiPartsForEmail(email, prompt);
-    const res=await geminiApi([{role:'user', parts: parts}]);
-    document.getElementById('aiSummaryText').textContent=res.candidates?.[0]?.content?.parts?.[0]?.text||'Não foi possível gerar o resumo.';
-  } catch(e){document.getElementById('aiSummaryText').textContent='Erro: '+e.message;}
+    const res = await geminiApi([{ role: 'user', parts: parts }]);
+    summaryText.textContent = res.candidates?.[0]?.content?.parts?.[0]?.text || 'Não foi possível gerar o resumo.';
+  } catch (e) {
+    summaryText.textContent = 'Erro ao processar histórico: ' + e.message;
+  }
 }
 
 async function chatAboutFolder(folderName, folderId) {
@@ -2596,7 +2631,7 @@ async function checkNewEmails() {
 
   // Constrói URL base
   let url = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=20` +
-      `&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance` +
+      `&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance,conversationId` +
       `&$orderby=receivedDateTime desc`;
 
   // Se tiver e-mails na lista, filtra apenas pelos mais novos que o topo
