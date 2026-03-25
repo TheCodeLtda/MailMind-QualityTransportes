@@ -126,19 +126,62 @@ function switchTab(tab, btn) {
   document.getElementById('chatTab').classList.toggle('active', tab === 'chat');
 }
 
+
+/**
+ * SETUP WIZARD
+ */
+let _currentSetupStep = 1;
+function showSetupStep(step) {
+  _currentSetupStep = step;
+  const fill = document.getElementById('setupProgressFill');
+  if (fill) fill.style.width = (step === 1 ? '0%' : step === 2 ? '50%' : '100%');
+  document.querySelectorAll('.step-dot').forEach((dot, i) => {
+    dot.classList.toggle('active', i + 1 === step);
+    dot.classList.toggle('done', i + 1 < step);
+  });
+  document.querySelectorAll('.setup-step-panel').forEach((panel, i) => {
+    panel.classList.toggle('active', i + 1 === step);
+  });
+  if (step === 3) {
+    const key = document.getElementById('setupApiKey')?.value || '';
+    const cid = document.getElementById('setupClientId')?.value || '';
+    document.getElementById('sumApiKey').textContent = key.length > 10 ? key.substring(0, 10) + '...' : key;
+    document.getElementById('sumClientId').textContent = cid || 'Modo Demo';
+  }
+}
+function setupNext() {
+  if (_currentSetupStep === 1) {
+    if (!document.getElementById('setupApiKey').value.trim()) { showNotif('error','⚠️','Chave API obrigatória'); return; }
+    showSetupStep(2);
+  } else if (_currentSetupStep === 2) { showSetupStep(3); }
+  else { finishSetup(); }
+}
+function setupBack() { if (_currentSetupStep > 1) showSetupStep(_currentSetupStep - 1); }
+function finishSetup() {
+  const cfg = {
+    claudeApiKey: document.getElementById('setupApiKey').value.trim(),
+    clientId: document.getElementById('setupClientId').value.trim(),
+    tenantId: document.getElementById('setupTenantId').value.trim() || 'common',
+    redirectUri: document.getElementById('setupRedirectUri').value.trim() || window.location.origin,
+    autoClassify: true, useOutlookFolders: true, batchSize: 20
+  };
+  localStorage.setItem('mailmind_config', JSON.stringify(cfg));
+  document.getElementById('setupScreen').classList.add('hidden');
+  loadApp(cfg);
+  showNotif('success', '🚀', 'Configuração concluída!');
+}
+
+let _pollingTimer = null;
 function startPolling() {
-  setInterval(async () => {
-    if (!state.accessToken) return;
-    // Lógica simplificada de polling para novos e-mails
-    const res = await fetch('https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=1', {
-      headers: { Authorization: `Bearer ${state.accessToken}` }
-    });
-    const data = await res.json();
-    if (data.value.length && data.value[0].id !== state.emails[0]?.id) {
-      addNotification('mail', 'Novo E-mail', data.value[0].subject, data.value[0].id);
-      fetchEmails();
-    }
+  stopPolling();
+  _pollingTimer = setInterval(async () => {
+    if (!state.accessToken || !state.connected) return;
+    if (state.currentFolder && state.currentFolder !== 'Caixa de Entrada') return;
+    checkNewEmails();
   }, 60000);
 }
+function stopPolling() { if (_pollingTimer) { clearInterval(_pollingTimer); _pollingTimer = null; } }
+
+function initResize() { /* Lógica de redimensionamento implementada em app.js ou ui.js */ }
 
 function initResize() { /* Lógica de redimensionamento dos painéis */ }
