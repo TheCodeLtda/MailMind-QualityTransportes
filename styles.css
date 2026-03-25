@@ -119,6 +119,11 @@ body {
   border: 1px solid transparent; font-weight: 500; position: relative;
 }
 .folder-item:hover { background: var(--surface2); color: var(--text); }
+.folder-item.drag-over {
+  background: var(--accent-bg) !important;
+  border: 1.5px dashed var(--accent) !important;
+  color: var(--accent) !important;
+}
 .folder-dot {
   width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0;
   opacity: 0.6; transition: opacity 0.2s;

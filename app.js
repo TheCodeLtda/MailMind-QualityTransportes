@@ -267,7 +267,10 @@ function renderSidebarFolders() {
       
       // HTML do Item (Cabeçalho da pasta)
       const itemHtml = `
-        <div class="folder-item folder-item-outlook" data-folderid="${f.id}" style="padding-left:0">
+        <div class="folder-item folder-item-outlook" data-folderid="${f.id}" style="padding-left:0"
+             ondragover="handleFolderDragOver(event)" 
+             ondragleave="handleFolderDragLeave(event)" 
+             ondrop="handleFolderDrop(event, '${escHtml(f.displayName)}')">
           ${toggleHtml}
           <div class="folder-dot" style="background:${colors[i % colors.length]}"></div>
           <span class="folder-name" onclick="fetchEmailsByFolder('${f.id}','${escHtml(f.displayName)}')">${escHtml(f.displayName)}</span>
@@ -325,7 +328,10 @@ function renderSidebarFolders() {
     list.innerHTML = state.fixedFolders.map(f => {
       const count = getCount(f.name);
       return `
-      <div class="folder-item folder-item-fixed" data-foldername="${escHtml(f.name)}" style="padding-left:22px">
+      <div class="folder-item folder-item-fixed" data-foldername="${escHtml(f.name)}" style="padding-left:22px"
+           ondragover="handleFolderDragOver(event)" 
+           ondragleave="handleFolderDragLeave(event)" 
+           ondrop="handleFolderDrop(event, '${escHtml(f.name)}')">
         <div class="folder-dot" style="background:${f.color}"></div>
         <span class="folder-name" onclick="filterByFolder('${escHtml(f.name)}')">${escHtml(f.name)}</span>
         <span class="folder-count" title="Total de mensagens">${count}</span>
@@ -1528,7 +1534,8 @@ function renderEmailList() {
     const initials=getInitials(e.fromName||e.from), color=getAvatarColor(e.from), relDate=formatRelativeDate(e.date), selected=state.selectedEmail?.id===e.id;
     return `<div class="email-item ${e.unread?'unread':''} ${selected?'selected':''}"
       onclick="selectEmail('${e.id}')"
-      oncontextmenu="openEmailContextMenu(event,'${e.id}')">
+      oncontextmenu="openEmailContextMenu(event,'${e.id}')"
+      draggable="true" ondragstart="handleEmailDragStart(event, '${e.id}')">
       <div class="email-item-inner">
         <div class="email-avatar-col">
           <div class="list-avatar" style="background:${color}">${initials}</div>

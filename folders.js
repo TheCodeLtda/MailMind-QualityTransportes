@@ -30,7 +30,10 @@ function renderSidebarFolders() {
     const name = f.displayName || f.name;
     const color = f.color || getAvatarColor(name);
     return `
-      <div class="folder-item" onclick="filterByFolder('${escHtml(name)}')">
+      <div class="folder-item" onclick="filterByFolder('${escHtml(name)}')"
+           ondragover="handleFolderDragOver(event)" 
+           ondragleave="handleFolderDragLeave(event)" 
+           ondrop="handleFolderDrop(event, '${escHtml(name)}')">
         <div class="folder-dot" style="background:${color}"></div>
         <span class="folder-name">${escHtml(name)}</span>
         <button class="folder-menu-btn" onclick="event.stopPropagation();openFolderMenu(event, '${escHtml(name)}')">•••</button>
@@ -81,4 +84,42 @@ async function getTargetFolderId(folderName) {
     state.folderCache[cacheKey] = target.id;
     return target.id;
   } catch (e) { throw e; }
+}
+
+function handleFolderDragOver(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+  event.currentTarget.classList.add('drag-over');
+}
+
+function handleFolderDragLeave(event) {
+  event.currentTarget.classList.remove('drag-over');
+}
+
+async function handleFolderDrop(event, folderName) {
+  event.preventDefault();
+  event.currentTarget.classList.remove('drag-over');
+  
+  const emailId = event.dataTransfer.getData('text/plain');
+  if (!emailId || !folderName) return;
+
+  const email = state.emails.find(e => e.id === emailId);
+  if (!email) return;
+
+  // Feedback visual imediato: remove da lista local
+  state.emails = state.emails.filter(e => e.id !== emailId);
+  state.filteredEmails = state.filteredEmails.filter(e => e.id !== emailId);
+  if (state.selectedEmail?.id === emailId) state.selectedEmail = null;
+  
+  renderEmailList();
+  if (typeof updateUnreadBadge === 'function') updateUnreadBadge();
+
+  // Sincroniza com o Outlook
+  if (state.connected && state.accessToken) {
+    try {
+      await moveEmail(emailId, folderName);
+      showNotif('success', '✅', `E-mail movido para ${folderName}`);
+      if (typeof loadOutlookFolders === 'function') loadOutlookFolders();
+    } catch (e) { showNotif('error', '❌', 'Erro ao sincronizar movimento.'); }
+  }
 }

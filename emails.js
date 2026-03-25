@@ -14,7 +14,10 @@ function renderEmailList() {
           relDate = formatRelativeDate(e.date), 
           selected = state.selectedEmail?.id === e.id;
     return `
-      <div class="email-item ${e.unread?'unread':''} ${selected?'selected':''}" onclick="selectEmail('${e.id}')" oncontextmenu="openEmailContextMenu(event,'${e.id}')">
+      <div class="email-item ${e.unread?'unread':''} ${selected?'selected':''}" 
+           onclick="selectEmail('${e.id}')" 
+           oncontextmenu="openEmailContextMenu(event,'${e.id}')"
+           draggable="true" ondragstart="handleEmailDragStart(event, '${e.id}')">
         <div class="email-item-inner">
           <div class="email-avatar-col">
             <div class="list-avatar" style="background:${color}">${initials}</div>
@@ -186,4 +189,9 @@ function buildEmailObj(m) {
     importance: m.importance, 
     conversationId: m.conversationId 
   };
+}
+
+function handleEmailDragStart(event, emailId) {
+  event.dataTransfer.setData('text/plain', emailId);
+  event.dataTransfer.dropEffect = 'move';
 }
