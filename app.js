@@ -1275,7 +1275,7 @@ async function classifyAllEmails() {
         // Contabiliza para o relatório final
         actionSummary[matchedRule.name] = (actionSummary[matchedRule.name] || 0) + 1;
 
-        addNotification('ai', 'Classificação Automática', `E-mail "${email.subject.substring(0,20)}..." movido para ${folder}`, email.id);
+        addNotification('ai', 'Classificação Automática', `E-mail "${email.subject.substring(0,50)}..." movido para ${folder}`, email.id);
 
         if(state.connected && state.accessToken){
           await moveEmail(email.id, folder);
@@ -1343,6 +1343,7 @@ async function classifyBatch(emailsToProcess) {
         }
 
         // Remove da lista visual local pois foi movido para pasta
+        // This part is crucial for the notification to open the email, as it's removed from the current view.
         state.emails = state.emails.filter(e => e.id !== email.id);
         state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
       }
@@ -1396,7 +1397,7 @@ async function classifySelected() {
   renderEmailList();
   if (state.connected) loadOutlookFolders(); // Atualiza contadores
   hideStatus();
-  showNotif('success','✅',`Movido para "${folder}" pela regra: "${matchedRule.name}"`);
+  addNotification('ai', 'E-mail Classificado', `"${email.subject.substring(0, 50)}..." movido para ${folder}`, email.id);
 }
 async function classifyEmail(email) {
   const cfg=loadConfig();

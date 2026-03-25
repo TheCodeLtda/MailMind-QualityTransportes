@@ -110,22 +110,6 @@ function saveNotifications() {
   localStorage.setItem('mm_notifications', JSON.stringify(state.notifications.slice(0, 50)));
 }
 
-function switchView(view, btn) {
-  state.currentView = view;
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  document.getElementById('emailPanel').style.display = view === 'emails' ? 'flex' : 'none';
-  document.getElementById('rulesPanel').style.display = view === 'rules' ? 'block' : 'none';
-  document.getElementById('configPanel').style.display = view === 'config' ? 'block' : 'none';
-}
-
-function switchTab(tab, btn) {
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  document.getElementById('detailTab').classList.toggle('active', tab === 'detail');
-  document.getElementById('chatTab').classList.toggle('active', tab === 'chat');
-}
-
 function startPolling() {
   setInterval(async () => {
     if (!state.accessToken) return;
