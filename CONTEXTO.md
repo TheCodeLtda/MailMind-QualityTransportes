@@ -79,3 +79,14 @@ A chamada para a API do Claude estava sendo bloqueada pelo navegador (CORS). A s
 
 ## Como usar o contexto
 Cole este documento no início de um novo chat com o Claude e diga o que quer melhorar. O Claude terá todo o contexto necessário para continuar o projeto de onde paramos.
+
+## Novas estruturas de arquivos 
+utils.js — helpers puros (escHtml, format*, getInitials, etc.)
+state.js — estado global, constantes, config
+api-graph.js — todas as chamadas ao Microsoft Graph
+api-ai.js — Gemini, classificação, resumo, chat
+folders.js — pastas (CRUD, render, filtros)
+emails.js — lista, detalhe, render, composer
+rules.js — regras de classificação
+ui.js — notificações, setup, views, resize, polling, favicon
+app.js — apenas inicialização (init, loadApp) + imports
