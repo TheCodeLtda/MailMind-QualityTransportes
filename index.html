@@ -165,10 +165,6 @@
   </div>
 
   <div class="sidebar-bottom">
-    <button class="notif-bell-btn" id="notifBellBtn" onclick="toggleNotificationCenter()">
-      <span class="bell-icon">🔔</span>
-      <span class="bell-badge" id="notifBadge" style="display:none">0</span>
-    </button>
     <button class="connect-btn" id="connectBtn" onclick="connectOutlook()">
       <span>🔗</span> Conectar Outlook
     </button>
@@ -226,8 +222,16 @@
     </div>
 
     <div class="tab-bar">
-      <div class="tab active" onclick="switchTab('detail', this)">E-mail</div>
-      <div class="tab" onclick="switchTab('chat', this)">💬 Assistente IA</div>
+      <div class="tab-items">
+        <div class="tab active" onclick="switchTab('detail', this)">E-mail</div>
+        <div class="tab" onclick="switchTab('chat', this)">💬 Assistente IA</div>
+      </div>
+      <div class="tab-actions">
+        <button class="notif-bell-btn" id="notifBellBtn" onclick="toggleNotificationCenter()">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+          <span class="bell-badge" id="notifBadge" style="display:none">0</span>
+        </button>
+      </div>
     </div>
 
     <!-- EMAIL DETAIL -->

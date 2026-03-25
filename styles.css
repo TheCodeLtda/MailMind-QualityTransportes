@@ -280,9 +280,9 @@ body {
 
 /* TABS */
 .tab-bar {
-  display: flex; border-bottom: 1px solid var(--border);
-  background: var(--surface); padding: 0 24px; flex-shrink: 0;
+  display: flex; (--surface); padding: 0 16px 0 24px; flex-shrink: 0;
 }
+.tab-items { display: flex; }
 .tab {
   padding: 13px 18px; font-size: 13px; font-weight: 700;
   color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent;
