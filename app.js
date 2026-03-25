@@ -30,7 +30,7 @@ function loadApp(cfg) {
   renderChatHistory();
 
   // Restaura token do sessionStorage (sobrevive F5 e fechar/abrir aba)
-  if (typeof restoreToken === 'function' && restoreToken()) {
+  if (restoreToken()) {
     if (state.useOutlookFolders) loadOutlookFolders();
     fetchEmails().then(() => startPolling());
   }
@@ -76,7 +76,7 @@ function toggleVisibility(inputId,btn) {
 }
 function resetConfig() {
   if(!confirm('Apagar todas as configurações e voltar ao setup? Continuar?')) return;
-  if (typeof stopPolling === 'function') stopPolling();
+  stopPolling();
   localStorage.removeItem('mailmind_config');
   localStorage.removeItem('mailmind_rules');
   localStorage.removeItem('mm_token');
@@ -86,3 +86,2446 @@ function resetConfig() {
   sessionStorage.removeItem('mm_expires_at');
   location.reload();
 }
+
+// ============================================================
+// OUTLOOK AUTH
+// ============================================================
+function connectOutlook() {
+  const cfg=loadConfig();
+  if (!cfg.clientId) { showNotif('error','❌','Configure o Client ID do Azure primeiro'); switchView('config',null); return; }
+  const scopes='openid profile email Mail.Read Mail.ReadWrite Mail.Send offline_access';
+  const redirectUri=encodeURIComponent(cfg.redirectUri||window.location.origin);
+  const tenantId=cfg.tenantId||'common';
+  const authUrl=`https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize?client_id=${cfg.clientId}&response_type=token&redirect_uri=${redirectUri}&scope=${encodeURIComponent(scopes)}&response_mode=fragment`;
+  const popup=window.open(authUrl,'outlook-auth','width=500,height=700,scrollbars=yes');
+  const interval=setInterval(()=>{
+    try {
+      if(!popup||popup.closed){clearInterval(interval);return;}
+      const hash=popup.location.hash;
+      if(hash&&hash.includes('access_token')){
+        clearInterval(interval); popup.close();
+        const params=new URLSearchParams(hash.substring(1));
+        const token=params.get('access_token'), expiry=params.get('expires_in');
+        if(token) handleToken(token,expiry);
+      }
+    } catch {}
+  },500);
+}
+function handleToken(token, expiresIn) {
+  state.accessToken = token; state.connected = true;
+  const expiresAt = Date.now() + ((parseInt(expiresIn) || 3600) * 1000);
+  localStorage.setItem('mm_token', token);
+  localStorage.setItem('mm_expires_at', String(expiresAt));
+  document.getElementById('connectBtn').innerHTML = '✅ Conectado';
+  document.getElementById('connectBtn').classList.add('connected');
+  // Força o modo Outlook ao conectar pela primeira vez para ver as pastas reais e contadores
+  if (state.config.useOutlookFolders === undefined) {
+    state.config.useOutlookFolders = true;
+    state.useOutlookFolders = true;
+    localStorage.setItem('mailmind_config', JSON.stringify(state.config));
+  }
+  document.getElementById('connectStatus').textContent = 'Outlook conectado';
+  showNotif('success','✅','Outlook conectado com sucesso!');
+  const cfg = loadConfig();
+  state.useOutlookFolders = cfg.useOutlookFolders === true;
+  loadOutlookFolders(); // Carrega pastas para ter os contadores atualizados (mesmo no modo fixo)
+  // Verifica se deve criar a estrutura de pastas agora (primeiro acesso)
+  if (cfg.createFoldersNow) ensureInitialFolderStructure();
+  
+  fetchEmails().then(() => startPolling());
+  // Agenda renovação silenciosa 5 min antes de expirar
+  scheduleTokenRenewal(expiresAt);
+}
+
+function scheduleTokenRenewal(expiresAt) {
+  const msUntilRenew = (expiresAt - Date.now()) - (5 * 60 * 1000); // 5 min antes
+  if (msUntilRenew <= 0) { silentRenewToken(); return; }
+  setTimeout(silentRenewToken, msUntilRenew);
+}
+
+function silentRenewToken() {
+  const cfg = loadConfig();
+  if (!cfg.clientId) return;
+  const redirectUri  = encodeURIComponent(cfg.redirectUri || window.location.origin);
+  const tenantId     = cfg.tenantId || 'common';
+  const scopes       = encodeURIComponent('openid profile email Mail.Read Mail.ReadWrite Mail.Send offline_access');
+  const url = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/authorize`
+    + `?client_id=${cfg.clientId}&response_type=token&redirect_uri=${redirectUri}`
+    + `&scope=${scopes}&response_mode=fragment&prompt=none`;
+
+  const iframe = document.createElement('iframe');
+  iframe.style.display = 'none';
+  iframe.src = url;
+  document.body.appendChild(iframe);
+
+  iframe.onload = () => {
+    try {
+      const hash = iframe.contentWindow.location.hash;
+      const params = new URLSearchParams(hash.replace('#',''));
+      const newToken = params.get('access_token');
+      const expiresIn = params.get('expires_in');
+      if (newToken) {
+        state.accessToken = newToken;
+        const expiresAt = Date.now() + ((parseInt(expiresIn) || 3600) * 1000);
+        localStorage.setItem('mm_token', newToken);
+        localStorage.setItem('mm_expires_at', String(expiresAt));
+        scheduleTokenRenewal(expiresAt);
+        console.log('Token renovado silenciosamente');
+      }
+    } catch(e) {
+      // Sessão expirou — precisa reconectar
+      console.warn('Renovação silenciosa falhou, usuário precisará reconectar');
+    }
+    document.body.removeChild(iframe);
+  };
+
+  setTimeout(() => { if (iframe.parentNode) document.body.removeChild(iframe); }, 10000);
+}
+
+function restoreToken() {
+  const token     = localStorage.getItem('mm_token')     || sessionStorage.getItem('mm_token');
+  const expiresAt = parseInt(localStorage.getItem('mm_expires_at') || sessionStorage.getItem('mm_expires_at') || '0');
+  if (!token || Date.now() >= expiresAt) return false;
+  state.accessToken = token; state.connected = true;
+  localStorage.setItem('mm_token', token);
+  localStorage.setItem('mm_expires_at', String(expiresAt));
+  document.getElementById('connectBtn').innerHTML = '✅ Conectado';
+  document.getElementById('connectBtn').classList.add('connected');
+  document.getElementById('connectStatus').textContent = 'Outlook conectado';
+  // Agenda renovação se necessário
+  scheduleTokenRenewal(expiresAt);
+  return true;
+}
+
+// ============================================================
+// PASTAS DO OUTLOOK
+// ============================================================
+async function loadOutlookFolders() {
+  if (!state.accessToken) return;
+  
+  // Função recursiva para buscar pastas e subpastas
+  const fetchRecursive = async (url, level = 0, parentId = null) => {
+    try {
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${state.accessToken}` } });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const items = data.value || [];
+      const result = [];
+      
+      for (const f of items) {
+        f.level = level; // Adiciona nível para indentação
+        f.parentId = parentId; // Guarda quem é o pai para montar a árvore
+        result.push(f);
+        
+        if (f.childFolderCount && f.childFolderCount > 0) {
+          const subUrl = `https://graph.microsoft.com/v1.0/me/mailFolders/${f.id}/childFolders?$top=100&$select=id,displayName,unreadItemCount,totalItemCount,childFolderCount&$orderby=displayName`;
+          const children = await fetchRecursive(subUrl, level + 1, f.id);
+          result.push(...children);
+        }
+      }
+      return result;
+    } catch(e) { console.warn('Erro ao carregar pasta:', e); return []; }
+  };
+
+  try {
+    const rootUrl = 'https://graph.microsoft.com/v1.0/me/mailFolders?$top=100&$select=id,displayName,unreadItemCount,totalItemCount,childFolderCount&$orderby=displayName';
+    state.outlookFolders = await fetchRecursive(rootUrl);
+    renderSidebarFolders(); // Redesenha a sidebar imediatamente com os dados novos
+  } catch(e) { console.warn('loadOutlookFolders:', e); }
+}
+
+function renderSidebarFolders() {
+  const list = document.getElementById('folderList');
+  if (!list) return;
+
+  // Prepara mapa de contagem para acesso rápido (Nome -> Total)
+  // Isso permite que as pastas fixas encontrem seus pares no Outlook
+  const countMap = new Map();
+  if (state.outlookFolders) {
+    state.outlookFolders.forEach(f => {
+      if(f.displayName) countMap.set(f.displayName.toLowerCase(), f.totalItemCount || 0);
+    });
+  }
+
+  // Helper para pegar a contagem correta
+  const getCount = (name) => {
+    // Se conectado, tenta pegar o total real do servidor.
+    if (state.connected && state.accessToken) {
+      return countMap.has(name.toLowerCase()) ? countMap.get(name.toLowerCase()) : 0;
+    }
+    // Modo offline/local: conta apenas o que está na memória
+    return state.emails.filter(e => e.folder === name).length;
+  };
+
+  // Função auxiliar para renderizar HTML da árvore recursivamente
+  const renderTreeHtml = (items, colors) => {
+    return items.map((f, i) => {
+      const hasChildren = f.children && f.children.length > 0;
+      const toggleHtml = hasChildren 
+        ? `<div class="folder-toggle-icon" onclick="event.stopPropagation();toggleSubfolders('${f.id}', this)">▶</div>`
+        : `<div class="folder-toggle-icon" style="opacity:0"></div>`; // Espaço reservado para alinhamento
+      
+      // HTML do Item (Cabeçalho da pasta)
+      const itemHtml = `
+        <div class="folder-item folder-item-outlook" data-folderid="${f.id}" style="padding-left:0">
+          ${toggleHtml}
+          <div class="folder-dot" style="background:${colors[i % colors.length]}"></div>
+          <span class="folder-name" onclick="fetchEmailsByFolder('${f.id}','${escHtml(f.displayName)}')">${escHtml(f.displayName)}</span>
+          <span class="folder-count" title="Total de mensagens">${f.totalItemCount || 0}</span>
+          <button class="folder-menu-btn" onclick="event.stopPropagation();openFolderMenu('${f.id}','${escHtml(f.displayName)}',this)" title="Opções">•••</button>
+        </div>`;
+
+      // Se tiver filhos, cria container aninhado (oculto por padrão, exceto raiz se desejar)
+      if (hasChildren) {
+        return `
+          <div class="folder-tree-node">
+            ${itemHtml}
+            <div class="folder-children" id="children-${f.id}">
+              ${renderTreeHtml(f.children, colors)}
+            </div>
+          </div>`;
+      }
+      return itemHtml;
+    }).join('');
+  };
+
+  if (state.useOutlookFolders && state.outlookFolders.length) {
+    // Pastas reais do Outlook com menu de contexto
+    const colors = ['#7C6EFA','#5DCAA5','#EF9F27','#F0997B','#E24B4A','#4AACE2','#B26EFA'];
+    
+    // Constrói estrutura de árvore a partir da lista plana
+    const folderMap = {};
+    const roots = [];
+    
+    // 1. Cria mapa
+    state.outlookFolders.forEach(f => { folderMap[f.id] = { ...f, children: [] }; });
+    
+    // 2. Monta hierarquia
+    state.outlookFolders.forEach(f => {
+      if (f.parentId && folderMap[f.parentId]) {
+        folderMap[f.parentId].children.push(folderMap[f.id]);
+      } else {
+        roots.push(folderMap[f.id]);
+      }
+    });
+
+    list.innerHTML = renderTreeHtml(roots, colors) + `<div class="folder-new-btn" onclick="openNewFolderModal()">+ Nova pasta</div>`;
+    
+  } else {
+    // Pastas fixas do MailMind — carrega do localStorage ou usa padrão
+    if (!state.fixedFolders) {
+      state.fixedFolders = JSON.parse(localStorage.getItem('mm_fixed_folders') || 'null') || [
+        { name:'Trabalho',   color:'#7C6EFA' },
+        { name:'Financeiro', color:'#5DCAA5' },
+        { name:'Marketing',  color:'#EF9F27' },
+        { name:'Pessoal',    color:'#F0997B' },
+        { name:'Outros',     color:'#888780' },
+      ];
+    }
+    list.innerHTML = state.fixedFolders.map(f => {
+      const count = getCount(f.name);
+      return `
+      <div class="folder-item folder-item-fixed" data-foldername="${escHtml(f.name)}" style="padding-left:22px">
+        <div class="folder-dot" style="background:${f.color}"></div>
+        <span class="folder-name" onclick="filterByFolder('${escHtml(f.name)}')">${escHtml(f.name)}</span>
+        <span class="folder-count" title="Total de mensagens">${count}</span>
+        <button class="folder-menu-btn" onclick="event.stopPropagation();openFixedFolderMenu(event,'${escHtml(f.name)}')" title="Opções">•••</button>
+      </div>`;
+    }).join('') +
+      `<div class="folder-new-btn" onclick="addFixedFolder()">+ Nova pasta</div>`;
+  }
+}
+
+function toggleSubfolders(id, btn) {
+  const container = document.getElementById(`children-${id}`);
+  if (container) {
+    const isOpen = container.classList.contains('open');
+    if (isOpen) {
+      container.classList.remove('open');
+      btn.classList.remove('open');
+      btn.textContent = '▶';
+    } else {
+      container.classList.add('open');
+      btn.classList.add('open');
+      btn.textContent = '▼';
+    }
+  }
+}
+
+async function fetchEmailsByFolder(folderId, folderName) {
+  if (!state.accessToken) return;
+
+  // Garante que estamos na view de emails
+  if (state.currentView !== 'emails') switchView('emails', null);
+
+  document.getElementById('panelTitle').textContent = folderName;
+  state.currentFolder  = folderName;
+  state.page.current   = 1;
+  state.page.prevLinks = [];
+  state.page.nextLink  = null;
+
+  // Destaca a pasta selecionada
+  document.querySelectorAll('.folder-item-outlook').forEach(el =>
+    el.classList.toggle('active-folder', el.dataset.folderid === folderId)
+  );
+
+  showStatus(`Carregando ${folderName}...`);
+  try {
+    const res = await fetch(
+      `https://graph.microsoft.com/v1.0/me/mailFolders/${folderId}/messages` +
+      `?$top=50&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance,conversationId` +
+      `&$orderby=receivedDateTime desc`,
+      { headers: { Authorization: `Bearer ${state.accessToken}`, 'Prefer':'outlook.body-content-type="html"' } }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    // Marca todos os e-mails com o nome da pasta
+    state.emails = data.value.map(m => ({ ...buildEmailObj(m), folder: folderName, tag: '' }));
+    state.filteredEmails = [...state.emails];
+    state.page.nextLink  = data['@odata.nextLink'] || null;
+
+    renderEmailList(); updateUnreadBadge(); renderPagination(); hideStatus();
+  } catch(e) { hideStatus(); showNotif('error','❌','Erro: '+e.message); }
+}
+
+function saveFixedFolders() {
+  localStorage.setItem('mm_fixed_folders', JSON.stringify(state.fixedFolders));
+}
+
+function openFixedFolderMenu(event, name) {
+  document.getElementById('folderCtxMenu')?.remove();
+  const menu = document.createElement('div');
+  menu.id = 'folderCtxMenu';
+  menu.className = 'folder-ctx-menu';
+  menu.innerHTML = `
+    <div class="ctx-item" onclick="summarizeFolder('${escHtml(name)}', null)">✨ Resumir pasta com IA</div>
+    <div class="ctx-item" onclick="chatAboutFolder('${escHtml(name)}', null)">🤖 IA da Pasta</div>
+    <div class="ctx-item" onclick="menu_shareFolder('${escHtml(name)}')">→ Compartilhar pasta</div>
+    <div class="ctx-item" onclick="menu_renameFixed('${escHtml(name)}')">✏️ Renomear</div>
+    <div class="ctx-item ctx-danger" onclick="deleteFixedFolder('${escHtml(name)}')">🗑 Excluir</div>`;
+  const rect = event.currentTarget.getBoundingClientRect();
+  menu.style.top  = (rect.bottom + 4) + 'px';
+  menu.style.left = (rect.right - 160) + 'px';
+  document.body.appendChild(menu);
+  setTimeout(() => { document.addEventListener('click', () => menu.remove(), { once: true }); }, 50);
+}
+// Wrappers que fecham o menu antes de abrir modal (evita propagação cancelando o modal)
+function menu_shareFolder(name, folderId) { document.getElementById('folderCtxMenu')?.remove(); document.getElementById('emailCtxMenu')?.remove(); setTimeout(() => openShareFolderModal(name, folderId||null), 10); }
+function menu_renameFixed(name)  { document.getElementById('folderCtxMenu')?.remove(); setTimeout(() => renameFixedFolder(name), 10); }
+
+async function addFixedFolder() {
+  const name = prompt('Nome da nova pasta:');
+  if (!name?.trim()) return;
+  const n = name.trim();
+  if (state.fixedFolders.find(f => f.name === n)) { showNotif('error','❌','Já existe uma pasta com esse nome'); return; }
+  
+  // Atualiza Local
+  const colors = ['#7C6EFA','#5DCAA5','#EF9F27','#F0997B','#E24B4A','#4AACE2','#B26EFA'];
+  state.fixedFolders.push({ name: n, color: colors[state.fixedFolders.length % colors.length] });
+  saveFixedFolders();
+  renderSidebarFolders();
+
+  // Sincroniza com Outlook
+  if (state.connected && state.accessToken) {
+    showStatus('Sincronizando pasta no Outlook...');
+    try {
+      // Usa getTargetFolderId para garantir a estrutura hierárquica (MailMind > Pasta)
+      await getTargetFolderId(n);
+      showNotif('success','✅',`Pasta "${n}" criada e sincronizada!`);
+    } catch(e) {
+      console.warn(e);
+      showNotif('warn','⚠️',`Pasta criada localmente. Erro no Outlook: ${e.message}`);
+    } finally { hideStatus(); }
+  } else {
+    showNotif('success','✅',`Pasta "${n}" criada (local)!`);
+  }
+}
+
+async function renameFixedFolder(oldName) {
+  const newName = prompt('Novo nome:', oldName);
+  if (!newName?.trim() || newName.trim() === oldName) return;
+  const n = newName.trim();
+  const f = state.fixedFolders.find(f => f.name === oldName);
+  if (!f) return;
+  
+  // Atualiza Local
+  // Atualiza e-mails com a pasta antiga
+  state.emails.forEach(e => { if (e.folder === oldName) e.folder = n; });
+  f.name = n;
+  saveFixedFolders();
+  renderSidebarFolders();
+  renderEmailList();
+
+  // Sincroniza com Outlook
+  if (state.connected && state.accessToken) {
+    showStatus('Renomeando no Outlook...');
+    try {
+      const folderId = await getTargetFolderId(oldName);
+      if (folderId) {
+        await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/${folderId}`, {
+          method: 'PATCH',
+          headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type':'application/json' },
+          body: JSON.stringify({ displayName: n }),
+        });
+        // Limpa cache antigo e atualiza
+        const cfg = loadConfig();
+        const useHierarchy = cfg.organizeInRoot !== false;
+        const prefix = useHierarchy ? 'ROOT_SUB_' : 'FLAT_';
+
+        state.folderCache[`${prefix}${oldName}`] = null;
+        state.folderCache[`${prefix}${n}`] = folderId;
+        showNotif('success','✅',`Pasta renomeada para "${n}" no Outlook!`);
+      }
+    } catch(e) {
+      console.warn(e);
+      showNotif('warn','⚠️',`Renomeado localmente. Erro no Outlook: ${e.message}`);
+    } finally { hideStatus(); }
+  } else {
+    showNotif('success','✅',`Pasta renomeada para "${n}"!`);
+  }
+}
+
+async function deleteFixedFolder(name) {
+  if (!confirm(`Excluir a pasta "${name}"? Os e-mails serão movidos para "Outros".`)) return;
+  
+  // Atualiza Local
+  state.fixedFolders = state.fixedFolders.filter(f => f.name !== name);
+  // Move e-mails para Outros
+  state.emails.forEach(e => { if (e.folder === name) { e.folder = 'Outros'; e.tag = ''; } });
+  saveFixedFolders();
+  renderSidebarFolders();
+  renderEmailList();
+
+  // Sincroniza com Outlook
+  if (state.connected && state.accessToken) {
+    showStatus('Excluindo do Outlook...');
+    try {
+      const folderId = await getTargetFolderId(name);
+      if (folderId) {
+        await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/${folderId}`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${state.accessToken}` },
+        });
+        state.folderCache[`FLAT_${name}`] = null;
+        showNotif('success','✅',`Pasta "${name}" excluída do Outlook!`);
+      }
+    } catch(e) {
+      console.warn(e);
+      showNotif('warn','⚠️',`Excluída localmente. Erro no Outlook: ${e.message}`);
+    } finally { hideStatus(); }
+  } else {
+    showNotif('success','✅',`Pasta "${name}" excluída!`);
+  }
+}
+function openFolderMenu(folderId, folderName, btn) {
+  document.getElementById('folderCtxMenu')?.remove();
+
+  const menu = document.createElement('div');
+  menu.id = 'folderCtxMenu';
+  menu.className = 'folder-ctx-menu';
+  menu.innerHTML = `
+    <div class="ctx-item" onclick="summarizeFolder('${escHtml(folderName)}', '${folderId}')">✨ Resumir pasta com IA</div>
+    <div class="ctx-item" onclick="chatAboutFolder('${escHtml(folderName)}', '${folderId}')">🤖 IA da Pasta</div>
+    <div class="ctx-item" onclick="menu_shareFolder('${escHtml(folderName)}','${folderId}')">→ Compartilhar pasta</div>
+    <div class="ctx-item" onclick="menu_renameOutlook('${folderId}','${escHtml(folderName)}')">✏️ Renomear</div>
+    <div class="ctx-item ctx-danger" onclick="confirmDeleteFolder('${folderId}','${escHtml(folderName)}')">🗑 Excluir pasta</div>`;
+
+  const rect = btn.getBoundingClientRect();
+  menu.style.top  = rect.bottom + 4 + 'px';
+  menu.style.left = rect.left   + 'px';
+  document.body.appendChild(menu);
+
+  setTimeout(() => {
+    document.addEventListener('click', () => menu.remove(), { once: true });
+  }, 50);
+}
+function menu_renameOutlook(id, name) { document.getElementById('folderCtxMenu')?.remove(); setTimeout(() => openRenameFolderModal(id, name), 10); }
+
+function openNewFolderModal() {
+  const name = prompt('Nome da nova pasta:');
+  if (!name?.trim()) return;
+  createOutlookFolder(name.trim());
+}
+
+async function createOutlookFolder(name) {
+  if (!state.accessToken) return;
+  try {
+    const res = await fetch('https://graph.microsoft.com/v1.0/me/mailFolders', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type':'application/json' },
+      body: JSON.stringify({ displayName: name }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showNotif('success','✅',`Pasta "${name}" criada!`);
+    await loadOutlookFolders();
+  } catch(e) { showNotif('error','❌','Erro ao criar pasta: '+e.message); }
+}
+
+function openRenameFolderModal(folderId, currentName) {
+  const name = prompt('Novo nome da pasta:', currentName);
+  if (!name?.trim() || name.trim() === currentName) return;
+  renameOutlookFolder(folderId, name.trim());
+}
+
+async function renameOutlookFolder(folderId, newName) {
+  if (!state.accessToken) return;
+  try {
+    const res = await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/${folderId}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type':'application/json' },
+      body: JSON.stringify({ displayName: newName }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showNotif('success','✅',`Pasta renomeada para "${newName}"!`);
+    await loadOutlookFolders();
+  } catch(e) { showNotif('error','❌','Erro ao renomear: '+e.message); }
+}
+
+async function confirmDeleteFolder(folderId, folderName) {
+  if (!confirm(`Excluir a pasta "${folderName}" e todos os e-mails dentro dela?`)) return;
+  try {
+    const res = await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/${folderId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${state.accessToken}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    showNotif('success','✅',`Pasta "${folderName}" excluída!`);
+    await loadOutlookFolders();
+  } catch(e) { showNotif('error','❌','Erro ao excluir pasta: '+e.message); }
+}
+
+function buildFolderOptions() {
+  if (state.useOutlookFolders && state.outlookFolders.length) {
+    return state.outlookFolders
+      .map(f => `<option value="${f.id}" data-name="${escHtml(f.displayName)}">${escHtml(f.displayName)}</option>`)
+      .join('');
+  }
+  // Usa pastas fixas dinâmicas (inclui pastas criadas pelo usuário)
+  const folders = state.fixedFolders || [
+    {name:'Trabalho'},{name:'Financeiro'},{name:'Marketing'},{name:'Pessoal'},{name:'Outros'}
+  ];
+  return folders.map(f => `<option value="${escHtml(f.name)}">${escHtml(f.name)}</option>`).join('');
+}
+
+async function moveSelectedToFolder(val) {
+  if (!val || !state.selectedEmail) return;
+  const email = state.selectedEmail;
+
+  if (state.useOutlookFolders) {
+    // val é o folderId — pega o nome do option selecionado
+    const sel = document.querySelector('.move-select');
+    const opt = sel?.querySelector(`option[value="${val}"]`);
+    const name = opt?.dataset.name || val;
+    email.folder = name;
+    if (state.connected && state.accessToken) {
+      try {
+        await fetch(`https://graph.microsoft.com/v1.0/me/messages/${email.id}/move`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${state.accessToken}`, 'Content-Type':'application/json' },
+          body: JSON.stringify({ destinationId: val }),
+        });
+      } catch(e) { showNotif('error','❌','Erro ao mover: '+e.message); return; }
+    }
+    showNotif('success','✅',`E-mail movido para ${name}`);
+    // Remove da lista atual (estamos dentro de uma pasta específica)
+    state.emails = state.emails.filter(e => e.id !== email.id);
+    state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
+    state.selectedEmail = null;
+    renderEmailList();
+    document.getElementById('detailTab').innerHTML=`
+      <div style="display:flex;align-items:center;justify-content:center;height:200px;flex-direction:column;gap:12px;">
+        <div style="font-size:48px;opacity:0.2">📭</div>
+        <div style="color:var(--text3);font-size:14px">Selecione um e-mail para visualizar</div>
+      </div>`;
+  } else {
+    moveSelected(val);
+  }
+}
+
+
+function toggleRuleActionTarget(val) {
+  const grp = document.getElementById('ruleActionTargetGroup');
+  if (grp) grp.style.display = val === 'forward' ? 'block' : 'none';
+}
+
+// Executa a ação automática configurada na regra após classificar
+async function executeRuleAction(email, rule) {
+  if (!rule.action || rule.action === 'none') return;
+  try {
+    if (rule.action === 'forward' && rule.actionTarget) {
+      await sendForward(email.id, rule.actionTarget, '');
+    } else if (rule.action === 'delete') {
+      await deleteEmail(email.id);
+      state.emails = state.emails.filter(e => e.id !== email.id);
+      state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
+    } else if (rule.action === 'markRead') {
+      await markAsRead(email.id);
+      email.unread = false;
+    }
+  } catch(e) { console.warn('executeRuleAction:', e); }
+}
+
+// ============================================================
+// COMPARTILHAR PASTA
+// ============================================================
+let _shareFolderTarget = null; // { name, emails[] }
+
+function openShareFolderModal(folderName, folderId) {
+  // Busca e-mails já carregados no state com essa pasta
+  const emails = state.emails.filter(e => e.folder === folderName);
+
+  // Se for pasta do Outlook, também guarda o folderId para buscar via API se necessário
+  _shareFolderTarget = { name: folderName, folderId: folderId || null, emails };
+
+  const count = folderId
+    ? (emails.length > 0 ? emails.length : '?') // do Outlook: pode ter mais que os carregados
+    : emails.length;
+
+  document.getElementById('shareFolderSub').textContent =
+    `Encaminhar e-mails da pasta "${folderName}" para um destinatário.`;
+  document.getElementById('shareFolderInfo').innerHTML =
+    emails.length === 0 && !folderId
+      ? '<div class="share-empty">Nenhum e-mail nesta pasta no momento.</div>'
+      : emails.length > 0
+        ? `<div class="share-preview">${emails.slice(0,3).map(e=>`<div class="share-item">📧 ${escHtml(e.subject)}</div>`).join('')}${emails.length>3?`<div class="share-more">...e mais ${emails.length-3} e-mails</div>`:''}</div>`
+        : '<div class="share-empty">Os e-mails serão buscados da pasta ao encaminhar.</div>';
+
+  document.getElementById('shareFolderEmail').value = '';
+  document.getElementById('shareFolderMessage').value = '';
+  document.getElementById('shareFolderModal').classList.add('open');
+}
+
+async function submitShareFolder() {
+  const to  = document.getElementById('shareFolderEmail').value.trim();
+  const msg = document.getElementById('shareFolderMessage').value.trim();
+  if (!to) { showNotif('error','❌','Informe o destinatário'); return; }
+  if (!state.accessToken) { showNotif('error','❌','Conecte o Outlook primeiro'); return; }
+
+  const btn = document.getElementById('shareFolderBtn');
+  btn.textContent = 'Encaminhando...'; btn.disabled = true;
+
+  // Usa os e-mails já carregados em state (suficiente para pastas fixas)
+  // Para pastas do Outlook, usa o folderId se disponível
+  let emails = _shareFolderTarget?.emails || [];
+
+  // Se não tiver nenhum e-mail carregado, tenta buscar pelo folderId
+  if (emails.length === 0 && _shareFolderTarget?.folderId && state.accessToken) {
+    try {
+      const res = await fetch(
+        `https://graph.microsoft.com/v1.0/me/mailFolders/${_shareFolderTarget.folderId}/messages?$top=50&$select=id,subject`,
+        { headers: { Authorization: `Bearer ${state.accessToken}` } }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        emails = data.value || [];
+      }
+    } catch {}
+  }
+
+  if (!emails.length) {
+    btn.textContent = 'Encaminhar'; btn.disabled = false;
+    showNotif('error','❌','Nenhum e-mail encontrado nesta pasta');
+    return;
+  }
+
+  // Atualiza preview com total real
+  document.getElementById('shareFolderSub').textContent =
+    `Encaminhando ${emails.length} e-mail(s) para ${to}...`;
+
+  let ok = 0, fail = 0;
+  const comment = msg || `E-mails encaminhados da pasta "${_shareFolderTarget.name}"`;
+
+  for (const email of emails) {
+    try {
+      await sendForward(email.id, to, comment);
+      ok++;
+    } catch(e) {
+      console.warn('Erro ao encaminhar:', email.id, e);
+      fail++;
+    }
+  }
+
+  btn.textContent = 'Encaminhar'; btn.disabled = false;
+  document.getElementById('shareFolderModal').classList.remove('open');
+
+  if (fail === 0) showNotif('success','✅',`${ok} e-mail(s) encaminhado(s) para ${to}!`);
+  else showNotif('error','❌',`${ok} enviado(s), ${fail} com erro.`);
+}
+// ============================================================
+async function deleteEmail(emailId) {
+  await fetch(`https://graph.microsoft.com/v1.0/me/messages/${emailId}`,{
+    method:'DELETE', headers:{Authorization:`Bearer ${state.accessToken}`},
+  });
+}
+
+// ============================================================
+// COMPOSER — responder / encaminhar
+// ============================================================
+function openComposer(mode) {
+  const email = state.selectedEmail; if (!email) return;
+  document.getElementById('composerPanel')?.remove();
+
+  let toVal = "";
+  let ccVal = "";
+
+  if (mode === 'forward') {
+    toVal = "";
+    ccVal = "";
+  } else if (mode === 'reply') {
+    toVal = email.from;
+    ccVal = "";
+  } else if (mode === 'replyAll') {
+    // No responder a todos, incluímos o remetente e os outros destinatários originais no "Para"
+    // e mantemos os que estavam em cópia no campo "CC"
+    toVal = email.from;
+    if (email.to && email.to.length > 0) {
+      const otherTo = email.to.filter(addr => addr.toLowerCase() !== email.from.toLowerCase());
+      if (otherTo.length > 0) toVal += ', ' + otherTo.join(', ');
+    }
+    ccVal = (email.cc || []).join(', ');
+  }
+
+  const subjectVal = (mode==='forward'?'Enc: ':'Re: ') + email.subject;
+
+  const panel = document.createElement('div');
+  panel.id='composerPanel'; panel.className='composer-panel';
+  panel.innerHTML=`
+    <div class="composer-header">
+      <span class="composer-title">${mode==='forward'?'Encaminhar':mode==='replyAll'?'Responder a todos':'Responder'}</span>
+      <button class="composer-close" onclick="document.getElementById('composerPanel').remove()">✕</button>
+    </div>
+    <div class="composer-fields">
+      <div class="composer-field"><label>Para</label>
+        <input id="composerTo" type="text" value="${escHtml(toVal)}" placeholder="destinatario@email.com"/></div>
+      <div class="composer-field"><label>CC</label>
+        <input id="composerCc" type="text" value="${escHtml(ccVal)}" placeholder="copia@email.com"/></div>
+      <div class="composer-field"><label>Assunto</label>
+        <input id="composerSubject" type="text" value="${escHtml(subjectVal)}" readonly/></div>
+    </div>
+    <textarea class="composer-body" id="composerBody" placeholder="Escreva sua mensagem aqui..."></textarea>
+    <div class="composer-footer">
+      <button class="action-btn" onclick="document.getElementById('composerPanel').remove()">Cancelar</button>
+      <button class="action-btn primary" id="composerSendBtn" onclick="submitComposer('${mode}','${email.id}')">
+        ${mode==='forward'?'Encaminhar':'Enviar'}
+      </button>
+    </div>`;
+  document.getElementById('detailTab').appendChild(panel);
+  document.getElementById('composerBody').focus();
+}
+
+async function submitComposer(mode, id) {
+  if(!state.accessToken) return;
+  const to   = document.getElementById('composerTo')?.value.trim();
+  const cc   = document.getElementById('composerCc')?.value.trim() || '';
+  const text = document.getElementById('composerBody')?.value.trim()||'';
+  
+  if(mode==='forward'&&!to){showNotif('error','❌','Informe o destinatário');return;}
+  if(!text){showNotif('error','❌','Escreva uma mensagem');return;}
+
+  const btn=document.getElementById('composerSendBtn');
+  if(btn){btn.textContent='Enviando...';btn.disabled=true;}
+  try {
+    if(mode==='forward') {
+      await sendForward(id, to, cc, text);
+    } else {
+      await sendReply(id, text, to, cc, mode==='replyAll');
+    }
+    document.getElementById('composerPanel')?.remove();
+    showNotif('success','✅','Mensagem enviada!');
+  } catch(e){
+    showNotif('error','❌','Erro ao enviar: '+e.message);
+    if(btn){btn.textContent=mode==='forward'?'Encaminhar':'Enviar';btn.disabled=false;}
+  }
+}
+
+async function deleteSelected() {
+  const email=state.selectedEmail; if(!email) return;
+  if(!confirm(`Mover "${email.subject}" para a lixeira?`)) return;
+  if(state.connected&&state.accessToken){
+    try { await deleteEmail(email.id); } catch(e){showNotif('error','❌','Erro: '+e.message);return;}
+  }
+  state.emails=state.emails.filter(e=>e.id!==email.id);
+  state.filteredEmails=state.filteredEmails.filter(e=>e.id!==email.id);
+  state.selectedEmail=null;
+  document.getElementById('detailTab').innerHTML=`
+    <div style="display:flex;align-items:center;justify-content:center;height:200px;flex-direction:column;gap:12px;">
+      <div style="font-size:48px;opacity:0.2">🗑</div>
+      <div style="color:var(--text3);font-size:14px">E-mail movido para a lixeira</div>
+    </div>`;
+  renderEmailList(); updateFolderCounts(); updateUnreadBadge();
+  showNotif('success','✅','E-mail movido para a lixeira');
+}
+
+function buildEmailObj(m) {
+  const isHtml=(m.body?.contentType||'').toLowerCase()==='html';
+  return {
+    id:m.id, from:m.from?.emailAddress?.address||'', fromName:m.from?.emailAddress?.name||'',
+    to:(m.toRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean),
+    cc:(m.ccRecipients||[]).map(r=>r.emailAddress?.address).filter(Boolean),
+    subject:m.subject||'(sem assunto)', preview:m.bodyPreview||'',
+    bodyHtml:isHtml?m.body.content:wrapTextAsHtml(m.body?.content||''),
+    bodyText:stripHtml(m.body?.content||''),
+    date:m.receivedDateTime, dateFormatted:formatDate(m.receivedDateTime),
+    unread:!m.isRead, hasAttachments:m.hasAttachments||false,
+    importance:m.importance||'normal', folder:'Outros', tag:'', attachments:null,
+    conversationId: m.conversationId,
+  };
+}
+
+const PAGE_SIZE = 50;
+// Pastas especiais do Outlook: sentitems, deleteditems, inbox
+const SPECIAL_FOLDER_NAMES = {
+  sentitems:    'Enviados',
+  deleteditems: 'Excluídos',
+  inbox:        'Caixa de Entrada',
+};
+
+async function loadSpecialFolder(folderKey) {
+  // null = voltar para caixa de entrada padrão
+  if (!folderKey) {
+    document.getElementById('panelTitle').textContent = 'Caixa de Entrada';
+    state.currentFolder = null; state.currentFilter = 'all';
+    state.page.current = 1; state.page.prevLinks = []; state.page.nextLink = null;
+    document.querySelectorAll('.folder-item').forEach(el => el.classList.remove('active-folder'));
+    if (state.accessToken) fetchEmails();
+    return;
+  }
+
+  if (!state.accessToken) { showNotif('error','❌','Conecte o Outlook primeiro'); return; }
+
+  const name = SPECIAL_FOLDER_NAMES[folderKey] || folderKey;
+  document.getElementById('panelTitle').textContent = name;
+  state.currentFolder = name;
+  state.page.current = 1; state.page.prevLinks = []; state.page.nextLink = null;
+  document.querySelectorAll('.folder-item').forEach(el => el.classList.remove('active-folder'));
+
+  showStatus(`Carregando ${name}...`);
+  try {
+    const url = `https://graph.microsoft.com/v1.0/me/mailFolders/${folderKey}/messages`
+      + `?$top=50&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance,conversationId`
+      + `&$orderby=receivedDateTime desc`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${state.accessToken}`, 'Prefer':'outlook.body-content-type="html"' }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    state.emails = data.value.map(m => ({ ...buildEmailObj(m), folder: name }));
+    state.filteredEmails = [...state.emails];
+    state.page.nextLink = data['@odata.nextLink'] || null;
+    renderEmailList(); updateUnreadBadge(); renderPagination(); hideStatus();
+    showNotif('success','✅', `${state.emails.length} e-mails em ${name}`);
+  } catch(e) { hideStatus(); showNotif('error','❌','Erro: '+e.message); }
+}
+
+const BASE_URL  = 'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages'
+  + `?$top=${PAGE_SIZE}`
+  + '&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance,conversationId'
+  + '&$orderby=receivedDateTime desc';
+
+async function fetchEmails(url) {
+  if(!state.accessToken){showNotif('error','❌','Conecte sua conta Outlook primeiro');return;}
+  showStatus('Carregando e-mails...');
+  try {
+    const res=await fetch(url||BASE_URL, {
+      headers:{
+        Authorization:`Bearer ${state.accessToken}`,
+        'Content-Type':'application/json',
+        'Prefer':'outlook.body-content-type="html"',
+      }
+    });
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data=await res.json();
+
+    state.emails         = data.value.map(buildEmailObj);
+    state.filteredEmails = [...state.emails];
+    state.page.nextLink  = data['@odata.nextLink'] || null;
+    
+    // Atualiza estatísticas das pastas sempre que carregar e-mails (para ter contadores reais atualizados)
+    if (state.accessToken) {
+      loadOutlookFolders();
+    }
+
+    // Busca total de não lidos (apenas na primeira página)
+    if (!url) {
+      state.page.current   = 1;
+      state.page.prevLinks = [];
+      fetchUnreadCount();
+    }
+
+    renderEmailList();
+    updateUnreadBadge();
+    renderPagination();
+    hideStatus();
+    showNotif('success','✅',`${state.emails.length} e-mails carregados — página ${state.page.current}`);
+    // Classificação automática removida conforme solicitado
+  } catch(e) { hideStatus(); showNotif('error','❌','Erro ao carregar e-mails: '+e.message); }
+}
+
+async function fetchUnreadCount() {
+  try {
+    const res=await fetch(
+      'https://graph.microsoft.com/v1.0/me/messages/$count?$filter=isRead eq false',
+      {headers:{Authorization:`Bearer ${state.accessToken}`, ConsistencyLevel:'eventual'}}
+    );
+    if(res.ok) {
+      state.page.total=parseInt(await res.text())||null;
+      renderPagination();
+    }
+  } catch {}
+}
+
+function goNextPage() {
+  if(!state.page.nextLink) return;
+  // Salva URL atual para poder voltar
+  const currentUrl = state.page.current===1
+    ? null
+    : state.page.prevLinks[state.page.prevLinks.length-1]?._current;
+
+  state.page.prevLinks.push({ url: state.page.nextLink, _current: BASE_URL });
+  state.page.current++;
+  fetchEmails(state.page.nextLink);
+  document.getElementById('emailList').scrollTop=0;
+}
+
+function goPrevPage() {
+  if(state.page.current<=1) return;
+  state.page.prevLinks.pop();
+  state.page.current--;
+  const prevUrl = state.page.prevLinks.length>0
+    ? state.page.prevLinks[state.page.prevLinks.length-1].url
+    : null;
+  fetchEmails(prevUrl); // null = primeira página
+  document.getElementById('emailList').scrollTop=0;
+}
+
+function renderPagination() {
+  const bar=document.getElementById('paginationBar');
+  if(!bar) return;
+
+  const hasPrev = state.page.current > 1;
+  const hasNext = !!state.page.nextLink;
+  const totalTxt = state.page.total ? ` de ~${state.page.total.toLocaleString('pt-BR')}` : '';
+
+  bar.innerHTML=`
+    <div class="pagination-info">Página ${state.page.current}${totalTxt}</div>
+    <div class="pagination-btns">
+      <button class="page-btn" onclick="goPrevPage()" ${hasPrev?'':'disabled'}>← Anterior</button>
+      <button class="page-btn" onclick="goNextPage()" ${hasNext?'':'disabled'}>Próxima →</button>
+    </div>`;
+}
+async function fetchAttachments(emailId) {
+  if(!state.accessToken) return [];
+  try {
+    const res=await fetch(`https://graph.microsoft.com/v1.0/me/messages/${emailId}/attachments`,{headers:{Authorization:`Bearer ${state.accessToken}`}});
+    if(!res.ok) return [];
+    return (await res.json()).value||[];
+  } catch { return []; }
+}
+
+// ============================================================
+// GERENCIAMENTO INTELIGENTE DE PASTAS
+// ============================================================
+async function ensureInitialFolderStructure() {
+  const cfg = loadConfig();
+  if (!cfg.createFoldersNow) return;
+  
+  showStatus('Criando estrutura de pastas no Outlook...');
+  const defaultCategories = ['Financeiro', 'Trabalho', 'Marketing', 'Pessoal', 'Outros'];
+  
+  try {
+    // Cria/Busca a raiz e as subpastas
+    for (const cat of defaultCategories) {
+      await getTargetFolderId(cat);
+    }
+    showNotif('success', '✅', 'Estrutura "MailMind" criada com sucesso!');
+    
+    // Remove a flag para não rodar novamente em recargas futuras
+    cfg.createFoldersNow = false;
+    localStorage.setItem('mailmind_config', JSON.stringify(cfg));
+  } catch (e) {
+    console.error('Erro ao criar estrutura inicial:', e);
+    showNotif('error', '❌', 'Erro ao criar pastas iniciais');
+  } finally {
+    hideStatus();
+  }
+}
+
+async function getTargetFolderId(folderName) {
+  const cfg = loadConfig();
+  // Se a configuração 'organizeInRoot' for true (padrão), usamos a estrutura MailMind > Pasta
+  // Se for false, criamos a pasta direto na raiz
+  const useHierarchy = cfg.organizeInRoot !== false; 
+
+  // Chave de cache para evitar chamadas repetidas
+  const cacheKey = useHierarchy ? `ROOT_SUB_${folderName}` : `FLAT_${folderName}`;
+  if (state.folderCache[cacheKey]) return state.folderCache[cacheKey];
+
+  try {
+    let parentId = null; // null = raiz do outlook
+
+    // 1. Se usar hierarquia, garante a pasta pai "MailMind"
+    if (useHierarchy) {
+      let rootId = state.folderCache['ROOT_MAILMIND'];
+      if (!rootId) {
+        // Busca pasta MailMind
+        const resRoot = await fetch("https://graph.microsoft.com/v1.0/me/mailFolders?$filter=displayName eq 'MailMind'", {headers:{Authorization:`Bearer ${state.accessToken}`}});
+        const dataRoot = await resRoot.json();
+        if (dataRoot.value && dataRoot.value.length > 0) {
+          rootId = dataRoot.value[0].id;
+        } else {
+          // Cria pasta MailMind
+          const createRoot = await fetch("https://graph.microsoft.com/v1.0/me/mailFolders", {
+            method:'POST', headers:{Authorization:`Bearer ${state.accessToken}`,'Content-Type':'application/json'},
+            body:JSON.stringify({displayName:'MailMind'})
+          });
+          rootId = (await createRoot.json()).id;
+        }
+        state.folderCache['ROOT_MAILMIND'] = rootId;
+      }
+      parentId = rootId;
+    }
+
+    // 2. Busca ou Cria a pasta de destino (dentro do pai ou na raiz)
+    const urlList = parentId 
+      ? `https://graph.microsoft.com/v1.0/me/mailFolders/${parentId}/childFolders`
+      : `https://graph.microsoft.com/v1.0/me/mailFolders`;
+    
+    const resList = await fetch(urlList, {headers:{Authorization:`Bearer ${state.accessToken}`}});
+    const dataList = await resList.json();
+    
+    let target = (dataList.value || []).find(f => f.displayName.toLowerCase() === folderName.toLowerCase());
+    
+    if (!target) {
+      const createRes = await fetch(urlList, {
+        method:'POST', headers:{Authorization:`Bearer ${state.accessToken}`,'Content-Type':'application/json'},
+        body:JSON.stringify({displayName:folderName})
+      });
+      target = await createRes.json();
+    }
+
+    state.folderCache[cacheKey] = target.id;
+    return target.id;
+  } catch (e) {
+    console.error('Erro ao resolver pasta:', e);
+    throw e;
+  }
+}
+
+async function moveEmail(emailId,folderName) {
+  if(!state.accessToken) return;
+  try {
+    const destinationId = await getTargetFolderId(folderName);
+    await fetch(`https://graph.microsoft.com/v1.0/me/messages/${emailId}/move`,{method:'POST',headers:{Authorization:`Bearer ${state.accessToken}`,'Content-Type':'application/json'},body:JSON.stringify({destinationId:destinationId})});
+  } catch(e){console.error('Erro ao mover:',e);}
+}
+
+// ============================================================
+// GEMINI API
+// ============================================================
+async function geminiApi(contents, systemInstruction=null) {
+  const cfg = loadConfig();
+  const model = cfg.model || 'gemini-2.5-flash';
+  
+  const apiKey = cfg.claudeApiKey;
+  if (!apiKey) throw new Error('API Key não configurada');
+
+  // Monta a URL direta do Google
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  
+  const body = { contents };
+  if (systemInstruction) {
+    body.systemInstruction = { parts: [{ text: systemInstruction }] };
+  }
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  const data = await res.json();
+  
+  if (!res.ok) {
+    throw new Error(data.error?.message || `Erro API Google: ${res.status}`);
+  }
+  
+  return data;
+}
+
+// ============================================================
+// TESTE DE CONEXÃO GEMINI
+// ============================================================
+async function testGeminiConnection() {
+  showStatus('Testando conexão com a API do Gemini...');
+  
+  // Pega os valores diretamente dos campos de configuração para o teste
+  const apiKey = document.getElementById('configApiKey')?.value.trim();
+  const model = document.getElementById('configModel')?.value || 'gemini-2.5-flash';
+
+  if (!apiKey) {
+    hideStatus();
+    showNotif('error', '❌', 'Insira a chave da API do Gemini no campo acima para testar.');
+    return;
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  
+  const payload = {
+    contents: [{ role: 'user', parts: [{ text: 'Olá! Responda apenas "OK" se estiver funcionando.' }] }]
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) throw new Error(data.error?.message || `Erro HTTP: ${response.status}`);
+
+    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Resposta vazia';
+    hideStatus();
+    showNotif('success', '✅', `Conexão OK! Resposta da IA: "${reply.trim()}"`);
+  } catch (error) {
+    hideStatus();
+    showNotif('error', '❌', `Falha na conexão: ${error.message}`);
+  }
+}
+async function getAiPartsForEmail(email, textPrompt) {
+  const parts = [{ text: textPrompt }];
+  if (!state.accessToken || !email.hasAttachments) return parts;
+
+  try {
+    const attachments = await fetchAttachments(email.id);
+    let totalSize = 0;
+    for (const att of attachments) {
+      // Filtramos apenas anexos de arquivo que tenham conteúdo e sejam suportados (Imagens e PDF)
+      if (att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentBytes) {
+        const mime = att.contentType;
+        const isSupported = mime === 'application/pdf' || mime.startsWith('image/');
+        
+        // Limite de segurança: Evitar payloads gigantes que quebram o limite do Vercel (4.5MB)
+        const size = (att.contentBytes.length * 3) / 4; // Estimativa de tamanho original do base64
+        if (isSupported && (totalSize + size) < 3000000) { 
+          parts.push({
+            inlineData: {
+              mimeType: mime,
+              data: att.contentBytes
+            }
+          });
+          totalSize += size;
+        }
+      }
+    }
+  } catch (e) { console.warn("Erro ao processar anexos para IA:", e); }
+  return parts;
+}
+
+// ============================================================
+// AI — CLASSIFY & SUMMARIZE
+// ============================================================
+async function classifyAllEmails() {
+  const cfg=loadConfig();
+  if(!cfg.claudeApiKey){showNotif('error','❌','Configure a chave da API nas configurações.');return;}
+
+  // 1. Verifica se há regras ativas
+  const activeRules = state.rules.filter(r => r.active);
+  if (activeRules.length === 0) {
+    showNotif('warn', '⚠️', 'Nenhuma regra de IA está ativa. Ative regras no menu lateral antes de classificar.');
+    return;
+  }
+
+  if (state.isClassifying) { showNotif('warn','⏳','Classificação já em andamento...'); return; }
+  state.isClassifying = true;
+
+  // Snapshot dos e-mails a processar (evita erros se a lista mudar durante o processo)
+  // Filtra apenas os que estão na pasta atual ou "Outros" se estiver na raiz, para não mover o que já está certo
+  // Aqui pegamos um lote baseado na configuração
+  const batchSize = cfg.batchSize || 10;
+  const toProcess = [...state.emails].slice(0, batchSize);
+  
+  const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
+
+  showStatus(`Iniciando classificação de ${toProcess.length} e-mails...`);
+  let processedCount = 0;
+  const actionSummary = {}; // Armazena contagem por regra: { "Nome da Regra": 5 }
+
+  try {
+    for(let i=0; i<toProcess.length; i++){
+      const email = toProcess[i];
+      
+      // Atualiza progresso na barra global (visível em qualquer tela)
+      showStatus(`Classificando ${i+1}/${toProcess.length}: ${email.subject.substring(0,20)}...`);
+      
+      const folder = await classifyEmail(email);
+
+      // VERIFICAÇÃO RIGOROSA:
+      // Só move se a pasta retornada corresponder a uma REGRA ATIVA.
+      // Se a IA retornou "Outros" (padrão) mas não existe regra ativa para "Outros", ignoramos o e-mail.
+      const matchedRule = state.rules.find(r => r.active && r.folder === folder);
+      
+      if (matchedRule) {
+        // Aplica mudanças apenas se houve match com regra ativa
+        email.folder = folder; 
+        email.tag = tagMap[folder]||'';
+        
+        // Contabiliza para o relatório final
+        actionSummary[matchedRule.name] = (actionSummary[matchedRule.name] || 0) + 1;
+
+        addNotification('ai', 'Classificação Automática', `E-mail "${email.subject.substring(0,20)}..." movido para ${folder}`, email.id);
+
+        if(state.connected && state.accessToken){
+          await moveEmail(email.id, folder);
+          // Executa ação automática da regra correspondente (se houver)
+          if (matchedRule.action && matchedRule.action !== 'none') await executeRuleAction(email, matchedRule);
+        }
+        // Remove da visualização atual (feedback visual instantâneo)
+        state.emails = state.emails.filter(e => e.id !== email.id);
+        state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
+        
+        // Se o usuário estiver na tela de e-mails, atualiza a lista em tempo real
+        if (state.currentView === 'emails') renderEmailList();
+
+        processedCount++;
+      }
+      
+      // Delay para respeitar limite da API gratuita (Rate Limit)
+      await new Promise(r => setTimeout(r, 2000));
+    }
+    
+    // Monta mensagem de resumo
+    if (processedCount > 0) {
+      const details = Object.entries(actionSummary).map(([ruleName, count]) => `${count}x via "${ruleName}"`).join(', ');
+      showNotif('success','✅', `Classificados: ${details}`);
+    } else {
+      showNotif('success','✅', `Classificação concluída. Nenhum e-mail movido.`);
+    }
+  } catch (e) {
+    console.error('Erro no loop de classificação:', e);
+    showNotif('error','❌',`Erro durante classificação: ${e.message}`);
+  } finally {
+    state.isClassifying = false;
+    hideStatus();
+    // Atualização final para garantir consistência
+    if (state.currentView === 'emails') {
+      renderEmailList();
+      // Atualiza contadores das pastas (função nova implementada anteriormente)
+      if (state.connected) loadOutlookFolders(); 
+    }
+  }
+}
+
+// Função auxiliar para classificar um lote específico de e-mails (usado no auto-classify)
+async function classifyBatch(emailsToProcess) {
+  const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
+  const actionSummary = {};
+  showStatus(`Auto-classificando ${emailsToProcess.length} novo(s) e-mail(s)...`);
+  
+  for(const email of emailsToProcess) {
+    try {
+      const folder = await classifyEmail(email);
+      
+      // VERIFICAÇÃO RIGOROSA: Só move se houver regra ativa para essa pasta
+      const matchedRule = state.rules.find(r => r.active && r.folder === folder);
+      
+      if (matchedRule) {
+        email.folder = folder; 
+        email.tag = tagMap[folder]||'';
+
+        actionSummary[matchedRule.name] = (actionSummary[matchedRule.name] || 0) + 1;
+        
+        if(state.connected && state.accessToken) {
+          await moveEmail(email.id, folder);
+          if (matchedRule.action && matchedRule.action !== 'none') await executeRuleAction(email, matchedRule);
+        }
+
+        // Remove da lista visual local pois foi movido para pasta
+        state.emails = state.emails.filter(e => e.id !== email.id);
+        state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
+      }
+      
+      // Delay API
+      await new Promise(r => setTimeout(r, 4000));
+    } catch(e) { console.error('Erro auto-classify:', e); }
+  }
+  renderEmailList();
+
+  // Notifica o usuário sobre o que aconteceu automaticamente
+  const moves = Object.entries(actionSummary);
+  if (moves.length > 0) {
+    const details = moves.map(([ruleName, count]) => `${count}x via "${ruleName}"`).join(', ');
+    showNotif('success', '🤖', `Auto-classificação: ${details}`);
+  }
+  hideStatus();
+}
+
+async function classifySelected() {
+  const email = state.selectedEmail; if (!email) return;
+  const cfg = loadConfig();
+  if (!cfg.claudeApiKey) { showNotif('error','❌','Configure a chave da API'); return; }
+  
+  // Validação inicial
+  if (state.rules.filter(r => r.active).length === 0) { showNotif('warn','⚠️','Nenhuma regra ativa.'); return; }
+
+  showStatus('Classificando e-mail...');
+  const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
+  
+  const folder = await classifyEmail(email);
+  
+  // VERIFICAÇÃO RIGOROSA: Confere se a pasta retornada é de uma regra ativa
+  const matchedRule = state.rules.find(r => r.active && r.folder === folder);
+  
+  if (!matchedRule) {
+    hideStatus();
+    showNotif('warn', '⚠️', `Sem regra ativa correspondente (IA sugeriu: "${folder}"). E-mail mantido.`);
+    return;
+  }
+
+  email.folder = folder; email.tag = tagMap[folder]||'';
+  if (state.connected && state.accessToken) {
+    await moveEmail(email.id, folder);
+    if (matchedRule.action && matchedRule.action !== 'none') await executeRuleAction(email, matchedRule);
+    // Remove o e-mail da lista local
+    state.emails = state.emails.filter(e => e.id !== email.id);
+    state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
+    state.selectedEmail = null; // Limpa seleção pois foi movido
+  }
+  renderEmailList();
+  if (state.connected) loadOutlookFolders(); // Atualiza contadores
+  hideStatus();
+  showNotif('success','✅',`Movido para "${folder}" pela regra: "${matchedRule.name}"`);
+}
+async function classifyEmail(email) {
+  const cfg=loadConfig();
+  if(!cfg.claudeApiKey) return email.folder||'Outros';
+  
+  const activeRules = state.rules.filter(r => r.active);
+  if (activeRules.length === 0) return 'Outros';
+
+  const rulesText=activeRules.map(r=>`- Pasta "${r.folder}": ${r.criteria}`).join('\n');
+  const bodyText=email.bodyText||stripHtml(email.bodyHtml||'')||email.preview||'';
+  const prompt=`Classifique este e-mail (analise também os anexos se fornecidos). Responda APENAS com o nome da pasta.\n\nRegras:\n${rulesText}\n- "Outros": demais casos\n\nRemetente: ${email.from}\nAssunto: ${email.subject}\nCorpo: ${bodyText.substring(0,800)}\n\nPasta:`;
+  try {
+    const parts = await getAiPartsForEmail(email, prompt);
+    const res=await geminiApi([{role:'user', parts: parts}]);
+    const text=res.candidates?.[0]?.content?.parts?.[0]?.text?.trim()||'Outros';
+    // Valida se a resposta corresponde a uma regra ativa (ou Outros)
+    const allowed = [...new Set(activeRules.map(r => r.folder).concat(['Outros']))];
+    return allowed.find(f=>text.includes(f))||'Outros';
+  } catch { return 'Outros'; }
+}
+async function summarizeSelected() {
+  if(!state.selectedEmail) return;
+  const summaryBox = document.getElementById('aiSummaryBox');
+  const summaryText = document.getElementById('aiSummaryText');
+  
+  summaryBox.style.display='block';
+  summaryText.textContent='Analisando histórico da conversa...';
+  
+  const cfg=loadConfig();
+  if(!cfg.claudeApiKey){summaryText.textContent='Configure a chave da API.';return;}
+  
+  const email = state.selectedEmail;
+  
+  try {
+    let contextText = "";
+    
+    // Se o e-mail faz parte de uma conversa, busca as mensagens anteriores para dar contexto à IA
+    if (state.accessToken && email.conversationId) {
+      try {
+        const res = await fetch(
+          `https://graph.microsoft.com/v1.0/me/messages?$filter=conversationId eq '${email.conversationId}'&$select=from,receivedDateTime,bodyPreview,body&$orderby=receivedDateTime asc`,
+          { headers: { Authorization: `Bearer ${state.accessToken}`, 'Prefer': 'outlook.body-content-type="text"' } }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          contextText = (data.value || []).map(m => {
+            const sender = m.from?.emailAddress?.name || m.from?.emailAddress?.address || "Desconhecido";
+            const date = new Date(m.receivedDateTime).toLocaleString('pt-BR');
+            return `--- Mensagem de ${sender} em ${date} ---\n${m.body?.content || m.bodyPreview}`;
+          }).join('\n\n');
+        }
+      } catch (e) { console.warn("Erro ao buscar thread:", e); }
+    }
+
+    // Fallback se não conseguir a thread
+    if (!contextText) {
+      const bodyText = email.bodyText || stripHtml(email.bodyHtml || '') || email.preview || '';
+      contextText = `De: ${email.fromName} <${email.from}>\nAssunto: ${email.subject}\nCorpo:\n${bodyText}`;
+    }
+
+    const prompt = `Analise o fluxo desta conversa de e-mail e faça um resumo executivo em português (2-3 frases). Destaque a cronologia dos fatos, as decisões tomadas e o status atual da solicitação. Se houver anexos, considere o conteúdo deles no contexto da conversa.\n\nHISTÓRICO DA CONVERSA:\n${contextText.substring(0, 10000)}`;
+
+    const parts = await getAiPartsForEmail(email, prompt);
+    const res = await geminiApi([{ role: 'user', parts: parts }]);
+    summaryText.textContent = res.candidates?.[0]?.content?.parts?.[0]?.text || 'Não foi possível gerar o resumo.';
+  } catch (e) {
+    summaryText.textContent = 'Erro ao processar histórico: ' + e.message;
+  }
+}
+
+async function chatAboutFolder(folderName, folderId) {
+  document.getElementById('folderCtxMenu')?.remove();
+  // Carrega a pasta visualmente para dar contexto
+  if (folderId || folderName) filterByFolder(folderName);
+  
+  switchTab('chat');
+  addChatMessage('assistant', `🤖 Olá! Estou pronto para analisar a pasta **"${folderName}"**. O que você deseja saber? (Ex: "Quais são os prazos?", "Liste os remetentes", "Resuma os assuntos")`);
+}
+
+function toggleAiAction() {
+  const box = document.getElementById('aiActionBox');
+  box.classList.toggle('open');
+  if (box.classList.contains('open')) {
+    document.getElementById('aiActionInput').focus();
+  }
+}
+
+async function submitAiAction() {
+  const input = document.getElementById('aiActionInput');
+  const responseDiv = document.getElementById('aiActionResponse');
+  const btn = document.getElementById('btnAiAction');
+  const question = input.value.trim();
+  const email = state.selectedEmail;
+
+  if (!question || !email) return;
+
+  const cfg = loadConfig();
+  if (!cfg.claudeApiKey) { showNotif('error','❌','Configure a chave da API'); return; }
+
+  responseDiv.style.display = 'block';
+  responseDiv.textContent = 'Analisando...';
+  btn.disabled = true;
+
+  const bodyText = email.bodyText || stripHtml(email.bodyHtml||'') || email.preview || '';
+  const prompt = `Analise o seguinte e-mail e seus anexos para responder à pergunta.\n\nE-mail De: ${email.fromName} <${email.from}>\nAssunto: ${email.subject}\nData: ${email.dateFormatted}\n\nConteúdo:\n${bodyText.substring(0, 2500)}\n\n---\nPergunta do usuário: ${question}`;
+
+  try {
+    const parts = await getAiPartsForEmail(email, prompt);
+    const res = await geminiApi([{ role: 'user', parts: parts }]);
+    const text = res.candidates?.[0]?.content?.parts?.[0]?.text || 'Não consegui processar a resposta.';
+    responseDiv.innerHTML = formatText(text); // Usa o formatText existente para negrito e quebras de linha
+  } catch (e) {
+    responseDiv.textContent = 'Erro: ' + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ============================================================
+// EMAIL LIST RENDER
+// ============================================================
+function renderEmailList() {
+  const list=document.getElementById('emailList');
+  const emails=state.filteredEmails;
+  if(!emails.length){list.innerHTML='<div style="padding:40px 20px;text-align:center;color:var(--text3);font-size:13px;">Nenhum e-mail encontrado</div>';return;}
+  list.innerHTML=emails.map(e=>{
+    const initials=getInitials(e.fromName||e.from), color=getAvatarColor(e.from), relDate=formatRelativeDate(e.date), selected=state.selectedEmail?.id===e.id;
+    return `<div class="email-item ${e.unread?'unread':''} ${selected?'selected':''}"
+      onclick="selectEmail('${e.id}')"
+      oncontextmenu="openEmailContextMenu(event,'${e.id}')">
+      <div class="email-item-inner">
+        <div class="email-avatar-col">
+          <div class="list-avatar" style="background:${color}">${initials}</div>
+          ${e.unread?'<div class="unread-dot"></div>':''}
+        </div>
+        <div class="email-content-col">
+          <div class="email-meta">
+            <div class="email-sender">${escHtml(e.fromName||e.from)}</div>
+            <div class="email-date-row">
+              ${e.importance==='high'?'<span class="importance-icon" title="Alta importância">🔴</span>':''}
+              ${e.hasAttachments?'<span class="attach-icon" title="Tem anexos">📎</span>':''}
+              <span class="email-date">${relDate}</span>
+            </div>
+          </div>
+          <div class="email-subject">${escHtml(e.subject)}</div>
+          <div class="email-bottom-row">
+            <div class="email-preview">${escHtml(e.preview)}</div>
+            ${e.folder&&e.tag?`<span class="email-tag ${e.tag}">${e.folder}</span>`:''}
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+function selectEmail(id) {
+  state.selectedEmail=state.emails.find(e=>e.id===id);
+  if(!state.selectedEmail) return;
+  // Marca como lido localmente
+  if (state.selectedEmail.unread) {
+    state.selectedEmail.unread=false;
+    // Marca como lido no Outlook via Graph API (sem await para não bloquear UI)
+    if (state.connected && state.accessToken) markAsRead(state.selectedEmail.id);
+  }
+  renderEmailList(); renderEmailDetail(state.selectedEmail);
+  switchTab('detail',document.querySelectorAll('.tab')[0]); updateUnreadBadge();
+}
+
+async function markAsRead(emailId) {
+  try {
+    await fetch(`https://graph.microsoft.com/v1.0/me/messages/${emailId}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${state.accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ isRead: true }),
+    });
+  } catch(e) { console.warn('markAsRead:', e); }
+}
+
+// ============================================================
+// EMAIL DETAIL RENDER
+// ============================================================
+async function renderEmailDetail(email) {
+  const detail=document.getElementById('detailTab');
+  const initials=getInitials(email.fromName||email.from), color=getAvatarColor(email.from);
+  const toList=(email.to||[]).join(', ')||'—';
+  const dateStr=email.date?new Date(email.date).toLocaleString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'}):email.dateFormatted||'';
+  detail.innerHTML=`
+    <div class="detail-header">
+      <div class="detail-subject">${escHtml(email.subject)}</div>
+      <div class="detail-from">
+        <div class="avatar" style="background:${color}">${initials}</div>
+        <div class="from-info">
+          <div class="from-name">${escHtml(email.fromName||email.from)}</div>
+          <div class="from-email">${escHtml(email.from)}</div>
+        </div>
+        ${email.importance==='high'?'<span style="font-size:11px;background:rgba(226,75,74,0.15);color:var(--danger);padding:3px 8px;border-radius:6px;font-weight:500;">Alta prioridade</span>':''}
+      </div>
+      <div class="detail-recipients">
+        <span class="recipient-label">Para:</span> <span class="recipient-value">${escHtml(toList)}</span>
+        ${email.cc?.length?`<br/><span class="recipient-label">CC:</span> <span class="recipient-value">${escHtml(email.cc.join(', '))}</span>`:''}
+        <br/><span class="recipient-label">Data:</span> <span class="recipient-value">${dateStr}</span>
+      </div>
+      <div class="detail-actions">
+        <button class="action-btn primary" onclick="summarizeSelected()">✨ Resumir com IA</button>
+        <button class="action-btn" onclick="toggleAiAction()">🤖 IA</button>
+        <button class="action-btn" onclick="classifySelected()">⚡ Classificar</button>
+        <button class="action-btn" onclick="openComposer('reply')">↩ Responder</button>
+        <button class="action-btn" onclick="openComposer('replyAll')">↩↩ Resp. todos</button>
+        <button class="action-btn" onclick="openComposer('forward')">→ Encaminhar</button>
+        <button class="action-btn" onclick="deleteSelected()" style="color:var(--danger);border-color:rgba(226,75,74,0.3)">🗑 Excluir</button>
+        <select class="move-select" onchange="moveSelectedToFolder(this.value);this.value=''">
+          <option value="">Mover para...</option>
+          ${buildFolderOptions()}
+        </select>
+      </div>
+    </div>
+    <div class="ai-summary-box" id="aiSummaryBox" style="display:none">
+      <div class="ai-summary-label">✨ Resumo IA</div>
+      <div class="ai-summary-text" id="aiSummaryText">Gerando resumo...</div>
+    </div>
+    <div class="ai-action-box" id="aiActionBox">
+      <div class="ai-summary-label">🤖 Pergunta sobre este e-mail</div>
+      <div class="ai-action-input-row">
+        <input type="text" class="ai-action-input" id="aiActionInput" placeholder="Ex: Qual o prazo mencionado? Extraia os valores..." onkeydown="if(event.key==='Enter') submitAiAction()">
+        <button class="action-btn primary" id="btnAiAction" onclick="submitAiAction()">Perguntar</button>
+      </div>
+      <div class="ai-action-response" id="aiActionResponse"></div>
+    </div>
+    <div class="detail-divider"></div>
+    <div id="attachmentsArea"></div>
+    <div id="emailBodyArea" class="email-body-area"><div class="body-loading"><div class="spinner"></div> Carregando...</div></div>`;
+  renderEmailBody(email);
+  if(email.hasAttachments&&state.accessToken) loadAndRenderAttachments(email);
+}
+async function renderEmailBody(email) {
+  const area=document.getElementById('emailBodyArea');
+  if(!area) return;
+  let html=email.bodyHtml||'';
+  if(html) {
+    // Mostra loading enquanto processa imagens e anexos
+    area.innerHTML = '<div class="body-loading"><div class="spinner"></div> Processando conteúdo...</div>';
+
+    // Processamento completo: Sanitização + CIDs + HTTPS + Estilos (Passando objeto email completo)
+    html = await processEmailHtml(email);
+
+    area.innerHTML='';
+    const iframe=document.createElement('iframe');
+    iframe.className='email-iframe';
+    // Sandbox sem 'allow-scripts' para garantir segurança e silenciar console.
+    // allow-same-origin necessário para o resize automático funcionar (acesso ao contentDocument)
+    iframe.setAttribute('sandbox','allow-same-origin allow-popups');
+    iframe.setAttribute('scrolling','no');
+    // srcdoc carrega o conteúdo estático já processado
+    iframe.srcdoc = html;
+    area.appendChild(iframe);
+
+    // Auto-resize via onload do iframe
+    iframe.onload = () => {
+      try{
+        const doc = iframe.contentDocument;
+        if (doc && doc.body) {
+          const h = doc.body.scrollHeight;
+          if(h > 0) iframe.style.height = (h + 30) + 'px';
+        }
+      } catch(e) { console.warn('Resize bloqueado:', e); }
+    };
+  } else {
+    area.innerHTML=`<div class="detail-body">${escHtml(email.bodyText||email.preview||'').replace(/\n/g,'<br>')}</div>`;
+  }
+}
+
+async function processEmailHtml(email) {
+  let html = email.bodyHtml || '';
+  if (!html) return '';
+  
+  // DOMParser para manipulação segura e robusta
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, 'text/html');
+
+  // 1. Sanitização: Remove scripts, objetos e iframes (segurança + evita erros de console)
+  doc.querySelectorAll('script, object, embed, iframe, base, meta[http-equiv="refresh"]').forEach(el => el.remove());
+
+  // 2. Remove handlers de eventos (on* attributes)
+  doc.querySelectorAll('*').forEach(el => {
+    Array.from(el.attributes).forEach(attr => {
+      if (attr.name.toLowerCase().startsWith('on') || attr.value.toLowerCase().includes('javascript:')) {
+        el.removeAttribute(attr.name);
+      }
+    });
+  });
+
+  // 3. Resolve CIDs (Imagens inline)
+  // Verifica se há cid: no texto. Se tiver, busca anexos mesmo se hasAttachments for false (pra garantir)
+  if (state.accessToken && /cid:/i.test(html)) {
+  try {
+      const attachments = await fetchAttachments(email.id);
+      if (attachments && attachments.length > 0) {
+        const cidMap = new Map();
+        // Normaliza removendo < > e trim
+        const normalize = (s) => (s || '').replace(/^<|>$/g, '').trim().toLowerCase();
+
+        for (const att of attachments) {
+          if (att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentBytes) {
+            const type = att.contentType || 'application/octet-stream';
+            const dataUrl = `data:${type};base64,${att.contentBytes}`;
+            const raw = att.contentId;
+            if (raw) {
+              // Mapeia diversas variações para garantir match
+              cidMap.set(raw, dataUrl);
+              cidMap.set(normalize(raw), dataUrl); // lowercase sem <>
+              try { cidMap.set(decodeURIComponent(raw), dataUrl); } catch {}
+            }
+            if (att.name) cidMap.set(att.name, dataUrl);
+          }
+        }
+
+        // Substitui src
+        doc.querySelectorAll('[src]').forEach(el => {
+          const src = el.getAttribute('src');
+          if (src && src.toLowerCase().trim().startsWith('cid:')) {
+            const cid = src.substring(4).trim(); // remove 'cid:'
+            // Tenta achar exato ou normalizado
+            let val = cidMap.get(cid) || cidMap.get(normalize(cid));
+            // Tenta decodificar URI se falhou (ex: image%2001.jpg)
+            if (!val) { try { val = cidMap.get(decodeURIComponent(cid)); } catch {} }
+            
+            if (val) {
+              el.setAttribute('src', val);
+            } else {
+              // Remove src para evitar erro de console ERR_UNKNOWN_URL_SCHEME
+              // Substitui por pixel transparente para não ficar ícone de quebrado
+              el.removeAttribute('src');
+              el.setAttribute('src', 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
+              el.setAttribute('alt', ''); 
+            }
+          }
+        });
+      }
+    } catch(e) { console.warn('Erro CID:', e); }
+  }
+
+  // 4. Se ainda sobraram src="cid:..." (ex: sem anexos ou erro no fetch), remove para limpar console
+  doc.querySelectorAll('[src]').forEach(el => {
+    const s = el.getAttribute('src');
+    if (s && s.toLowerCase().startsWith('cid:')) {
+      el.removeAttribute('src');
+      el.setAttribute('src', 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7');
+    }
+  });
+
+  // 5. Mixed Content Fix
+  doc.querySelectorAll('[src^="http:"]').forEach(el => {
+    const s = el.getAttribute('src');
+    if (s.includes('outlook') || s.includes('microsoft')) el.setAttribute('src', s.replace('http:', 'https:'));
+  });
+
+  // 6. Força links externos para nova aba
+  doc.querySelectorAll('a').forEach(a => a.setAttribute('target', '_blank'));
+
+  // 7. Injeta Estilos Padrão para Iframe
+  const style = doc.createElement('style');
+  style.textContent = `
+    html,body{margin:0;padding:8px 12px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:14px;line-height:1.6;}
+    img{max-width:100%!important;height:auto!important;}
+    table{max-width:100%!important;}
+    a{word-break:break-all;}
+    *{box-sizing:border-box;}
+  `;
+  // Garante que existe head
+  if (!doc.head) {
+    const head = doc.createElement('head');
+    doc.documentElement.insertBefore(head, doc.body);
+  }
+  doc.head.appendChild(style);
+
+  return doc.documentElement.outerHTML;
+}
+async function loadAndRenderAttachments(email) {
+  const area=document.getElementById('attachmentsArea'); if(!area) return;
+  const attachments=await fetchAttachments(email.id);
+  const real=attachments.filter(a=>a['@odata.type']==='#microsoft.graph.fileAttachment'&&!a.isInline);
+  if(!real.length) return;
+  const items=real.map(a=>{
+    const sizeKb=a.size?Math.round(a.size/1024):0, icon=getAttachIcon(a.name);
+    const dataUrl=a.contentBytes?`data:${a.contentType};base64,${a.contentBytes}`:null;
+    const isImg=a.contentType?.startsWith('image/');
+    return `<div class="attachment-item">
+      <div class="attach-preview">${isImg&&dataUrl?`<img src="${dataUrl}" class="attach-thumb" alt="${escHtml(a.name)}">`:`<span class="attach-file-icon">${icon}</span>`}</div>
+      <div class="attach-info"><div class="attach-name">${escHtml(a.name)}</div><div class="attach-size">${sizeKb>0?sizeKb+' KB':''}</div></div>
+      ${dataUrl?`<a class="attach-download" href="${dataUrl}" download="${escHtml(a.name)}" title="Baixar">⬇</a>`:''}
+    </div>`;
+  }).join('');
+  area.innerHTML=`<div class="attachments-bar"><div class="attachments-label">Anexos (${real.length})</div><div class="attachments-list">${items}</div></div><div class="detail-divider"></div>`;
+}
+function moveSelected(folder) {
+  if(!folder||!state.selectedEmail) return;
+  const email=state.selectedEmail;
+  const tagMap={Financeiro:'tag-finance',Trabalho:'tag-work',Marketing:'tag-marketing',Pessoal:'tag-personal',Outros:''};
+  email.folder=folder; email.tag=tagMap[folder]||'';
+  if(state.connected&&state.accessToken) moveEmail(email.id,folder);
+  
+  // Remove visualmente da lista atual (pois foi movido de verdade)
+  state.emails = state.emails.filter(e => e.id !== email.id);
+  state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
+  state.selectedEmail = null;
+  
+  renderEmailList(); 
+  
+  document.getElementById('detailTab').innerHTML=`
+    <div style="display:flex;align-items:center;justify-content:center;height:200px;flex-direction:column;gap:12px;">
+      <div style="font-size:48px;opacity:0.2">📭</div>
+      <div style="color:var(--text3);font-size:14px">Selecione um e-mail para visualizar</div>
+    </div>`;
+  showNotif('success','✅',`E-mail movido para ${folder}`);
+}
+// ============================================================
+// AI CHAT
+// ============================================================
+async function sendChat() {
+  const input=document.getElementById('chatInput');
+  const msg=input.value.trim(); if(!msg) return;
+  input.value=''; autoResize(input);
+  addChatMessage('user',msg);
+  const typing=addTyping();
+  const cfg=loadConfig();
+  if(!cfg.claudeApiKey){removeTyping(typing);addChatMessage('assistant','Configure sua chave da API nas configurações.');return;}
+  const emailsContext=state.emails.map(e=>{
+    const body=e.bodyText||stripHtml(e.bodyHtml||'')||e.preview||'';
+    return `[${e.dateFormatted||e.date}] De: ${e.fromName} <${e.from}> | Pasta: ${e.folder}\nAssunto: ${e.subject}\nCorpo: ${body.substring(0,300)}`;
+  }).join('\n\n---\n\n');
+  const systemPrompt=`Você é um assistente de e-mails inteligente e equilibrado. Responda SEMPRE em português brasileiro. Forneça respostas claras e completas: evite ser excessivamente breve se houver detalhes importantes, mas não escreva textos gigantes ou difíceis de ler. Use parágrafos curtos e listas (tópicos) para organizar a informação. Seja útil e vá direto ao ponto, explicando o necessário.\n\nE-mails disponíveis (${state.emails.length}):\n${emailsContext}`;
+  
+  // Mapeia histórico para formato Gemini (role: 'user' | 'model')
+  // Filtra mensagens vazias para evitar erro 400
+  const history=state.chatHistory
+    .filter(m => m.text && m.text.trim() !== '')
+    .map(m=>({ role: m.role==='assistant'?'model':'user', parts:[{text:m.text}] }));
+  
+  history.push({role:'user', parts:[{text:msg}]});
+
+  try {
+    const data=await geminiApi(history,systemPrompt);
+    const reply=data.candidates?.[0]?.content?.parts?.[0]?.text||'Desculpe, não consegui processar.';
+    removeTyping(typing); addChatMessage('assistant',reply);
+    state.chatHistory.push({role:'user',text:msg},{role:'assistant',text:reply});
+    // Salva histórico no localStorage
+    if(state.chatHistory.length > 20) state.chatHistory = state.chatHistory.slice(-20);
+    localStorage.setItem('mailmind_chat_history', JSON.stringify(state.chatHistory));
+  } catch(e){removeTyping(typing);addChatMessage('assistant','Erro: '+e.message);}
+}
+
+function clearChat() {
+  if(!confirm('Deseja limpar todo o histórico da conversa?')) return;
+  state.chatHistory = [];
+  localStorage.removeItem('mailmind_chat_history');
+  const msgs = document.getElementById('chatMessages');
+  msgs.innerHTML = '';
+  addChatMessage('assistant', 'Histórico limpo. Como posso ajudar agora?');
+}
+
+async function summarizeFolder(folderName, folderId) {
+  document.getElementById('folderCtxMenu')?.remove();
+  switchTab('chat');
+  addChatMessage('user', `Resuma os e-mails da pasta "${folderName}"`);
+  const typing = addTyping();
+
+  try {
+    let emails = [];
+    // Busca ID se não fornecido (para pastas fixas)
+    if (!folderId && state.accessToken) {
+       folderId = await getTargetFolderId(folderName);
+    }
+
+    if (folderId && state.accessToken) {
+       const res = await fetch(`https://graph.microsoft.com/v1.0/me/mailFolders/${folderId}/messages?$top=15&$select=subject,from,bodyPreview,receivedDateTime`, {
+         headers: { Authorization: `Bearer ${state.accessToken}` }
+       });
+       if(res.ok) {
+         const data = await res.json();
+         emails = data.value || [];
+       }
+    }
+
+    if (!emails.length) {
+      removeTyping(typing);
+      addChatMessage('assistant', `Não encontrei e-mails recentes na pasta "${folderName}" para resumir.`);
+      return;
+    }
+
+    const context = emails.map(e => 
+      `- [${formatDate(e.receivedDateTime)}] De: ${e.from?.emailAddress?.name || 'Desconhecido'}: ${e.subject} | ${e.bodyPreview}`
+    ).join('\n');
+
+    const prompt = `Resuma em 3-5 tópicos curtos os e-mails da pasta "${folderName}". Destaque apenas o essencial: tema principal e pendências urgentes. Seja direto e breve.\n\n${context}`;
+    
+    const data = await geminiApi([{ role: 'user', parts: [{ text: prompt }] }]);
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Sem resposta da IA.';
+    
+    removeTyping(typing);
+    addChatMessage('assistant', text);
+  } catch (e) {
+    removeTyping(typing);
+    addChatMessage('assistant', 'Erro ao resumir pasta: ' + e.message);
+  }
+}
+
+function addChatMessage(role,text) {
+  const msgs=document.getElementById('chatMessages');
+  const div=document.createElement('div'); div.className=`msg ${role}`;
+  const now=new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  div.innerHTML=`<div class="msg-bubble">${formatText(text)}</div><div class="msg-time">${now}</div>`;
+  msgs.appendChild(div); msgs.scrollTop=msgs.scrollHeight; return div;
+}
+function renderChatHistory() {
+  const chatContainer = document.getElementById('chatMessages');
+  if (!chatContainer) return;
+  // Se houver histórico, limpa a mensagem de boas-vindas e renderiza as salvas
+  if (state.chatHistory.length > 0) {
+      chatContainer.innerHTML = '';
+      state.chatHistory.forEach(msg => addChatMessage(msg.role, msg.text));
+  }
+}
+function addTyping() {
+  const msgs=document.getElementById('chatMessages');
+  const div=document.createElement('div'); div.className='msg assistant';
+  div.innerHTML='<div class="typing-indicator"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div>';
+  msgs.appendChild(div); msgs.scrollTop=msgs.scrollHeight; return div;
+}
+function removeTyping(el){el?.parentNode?.removeChild(el);}
+function handleChatKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}}
+function useSuggestion(btn){document.getElementById('chatInput').value=btn.textContent;switchTab('chat',document.querySelectorAll('.tab')[1]);sendChat();}
+function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,140)+'px';}
+
+function openEmailContextMenu(event, id) {
+  event.preventDefault();
+  document.getElementById('emailCtxMenu')?.remove();
+
+  const email = state.emails.find(e => e.id === id);
+  if (!email) return;
+
+  // Seleciona o email
+  selectEmail(id);
+
+  const menu = document.createElement('div');
+  menu.id = 'emailCtxMenu';
+  menu.className = 'folder-ctx-menu';
+  menu.style.top  = event.clientY + 'px';
+  menu.style.left = event.clientX + 'px';
+  menu.innerHTML = `
+    <div class="ctx-item" onclick="classifySelected()">⚡ Classificar com IA</div>
+    <div class="ctx-item" onclick="summarizeSelected()">✨ Resumir com IA</div>
+    <div class="ctx-item" onclick="openComposer('reply')">↩ Responder</div>
+    <div class="ctx-item" onclick="openComposer('replyAll')">↩↩ Responder a todos</div>
+    <div class="ctx-item" onclick="openComposer('forward')">→ Encaminhar</div>
+    <div class="ctx-item ctx-danger" onclick="deleteSelected()">🗑 Mover para lixeira</div>`;
+  document.body.appendChild(menu);
+
+  // Ajusta posição se sair da tela
+  const rect = menu.getBoundingClientRect();
+  if (rect.right  > window.innerWidth)  menu.style.left = (event.clientX - rect.width)  + 'px';
+  if (rect.bottom > window.innerHeight) menu.style.top  = (event.clientY - rect.height) + 'px';
+
+  setTimeout(() => {
+    document.addEventListener('click', () => menu.remove(), { once: true });
+    document.addEventListener('contextmenu', () => menu.remove(), { once: true });
+  }, 50);
+}
+
+// ============================================================
+// RULES
+// ============================================================
+function renderRules() {
+  const list=document.getElementById('rulesList');
+  const pLabel={high:'Alta',medium:'Média',low:'Baixa'};
+  const pColor={high:'rgba(226,75,74,0.15)',medium:'rgba(239,159,39,0.15)',low:'rgba(29,158,117,0.15)'};
+  const pText={high:'var(--danger)',medium:'var(--warn)',low:'var(--success)'};
+
+  if (!state.rules.length) {
+    list.innerHTML='<div style="padding:24px;text-align:center;color:var(--text3);font-size:13px;">Nenhuma regra criada ainda.</div>';
+    return;
+  }
+
+  list.innerHTML=state.rules.map(r=>`
+    <div class="rule-card ${r.active?'active-rule':''}">
+      <div class="rule-info">
+        <div class="rule-name">${escHtml(r.name)}</div>
+        <div class="rule-desc">Mover para: <strong>${escHtml(r.folder)}</strong> — ${escHtml(r.criteria.substring(0,60))}${r.criteria.length>60?'...':''}</div>
+        ${r.action && r.action !== 'none' ? `<div class="rule-action-badge">${
+          r.action==='forward' ? `→ Encaminhar para ${escHtml(r.actionTarget||'')}` :
+          r.action==='delete'  ? '🗑 Mover para lixeira' :
+          r.action==='markRead'? '✓ Marcar como lido' : ''
+        }</div>` : ''}
+        <div class="rule-actions">
+          <span class="rule-tag" style="background:${pColor[r.priority]};color:${pText[r.priority]}">${pLabel[r.priority]||'Média'} prioridade</span>
+        </div>
+      </div>
+      <div class="rule-right">
+        <button class="rule-menu-btn" onclick="openRuleMenu(event,'${r.id}')" title="Opções">···</button>
+        <label class="rule-toggle">
+          <input type="checkbox" ${r.active?'checked':''} onchange="toggleRule('${r.id}',this.checked)"/>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>`).join('');
+}
+
+function openRuleMenu(event, id) {
+  event.stopPropagation();
+  document.getElementById('ruleCtxMenu')?.remove();
+
+  const menu = document.createElement('div');
+  menu.id = 'ruleCtxMenu';
+  menu.className = 'folder-ctx-menu';
+  menu.innerHTML = `
+    <div class="ctx-menu-section">Regra</div>
+    <div class="ctx-item" onclick="openEditRule('${id}')">✏️ Editar regra</div>
+    <div class="ctx-item ctx-danger" onclick="deleteRule('${id}')">🗑 Excluir regra</div>`;
+
+  const btn = event.currentTarget;
+  const rect = btn.getBoundingClientRect();
+  menu.style.top  = (rect.bottom + 4) + 'px';
+  menu.style.left = (rect.right - 200) + 'px';
+  document.body.appendChild(menu);
+
+  // Ajusta se sair da tela
+  const mr = menu.getBoundingClientRect();
+  if (mr.right  > window.innerWidth)  menu.style.left = (window.innerWidth - mr.width - 8) + 'px';
+  if (mr.bottom > window.innerHeight) menu.style.top  = (rect.top - mr.height - 4) + 'px';
+
+  setTimeout(() => {
+    document.addEventListener('click', () => { menu.remove(); switchView('emails', null); }, { once: true });
+  }, 50);
+}
+
+function openEditRule(id) {
+  const r = state.rules.find(r => r.id === id);
+  if (!r) return;
+  document.getElementById('ruleName').value     = r.name;
+  document.getElementById('ruleCriteria').value = r.criteria;
+  document.getElementById('rulePriority').value = r.priority;
+  document.getElementById('ruleAction').value   = r.action || 'none';
+  document.getElementById('ruleActionTarget').value = r.actionTarget || '';
+  toggleRuleActionTarget(r.action || 'none');
+  populateRuleFolderSelect(r.folder);
+  document.querySelector('#ruleModal .modal-title').textContent = 'Editar Regra';
+  const btn = document.querySelector('#ruleModal .btn-save');
+  btn.textContent = 'Salvar Alterações';
+  btn.onclick = () => updateRule(id);
+  document.getElementById('ruleModal').classList.add('open');
+}
+
+function updateRule(id) {
+  const r = state.rules.find(r => r.id === id);
+  if (!r) return;
+  const name     = document.getElementById('ruleName').value.trim();
+  const criteria = document.getElementById('ruleCriteria').value.trim();
+  const folder   = document.getElementById('ruleFolder').value;
+  const priority = document.getElementById('rulePriority').value;
+  const action   = document.getElementById('ruleAction').value;
+  const actionTarget = document.getElementById('ruleActionTarget').value.trim();
+  if (!name || !criteria) { showNotif('error','❌','Preencha nome e critério'); return; }
+  if (action === 'forward' && !actionTarget) { showNotif('error','❌','Informe o e-mail para encaminhar'); return; }
+  const icons  = {Financeiro:'💰',Trabalho:'💼',Marketing:'📢',Pessoal:'👤',Outros:'📋'};
+  const colors = {Financeiro:'rgba(29,158,117,0.15)',Trabalho:'rgba(124,110,250,0.15)',Marketing:'rgba(239,159,39,0.15)',Pessoal:'rgba(240,153,123,0.15)',Outros:'rgba(136,135,128,0.15)'};
+  Object.assign(r, { name, criteria, folder, priority, action, actionTarget, icon: icons[folder]||'📋', color: colors[folder]||'' });
+  saveRules(); renderRules(); closeModal();
+  showNotif('success','✅','Regra atualizada!');
+}
+
+function toggleRule(id,active){const r=state.rules.find(r=>r.id===id);if(r){r.active=active;saveRules();}}
+function deleteRule(id){
+  if(!confirm('Excluir esta regra?')) return;
+  state.rules=state.rules.filter(r=>r.id!==id);saveRules();renderRules();
+  showNotif('success','✅','Regra excluída!');
+}
+function saveRules(){localStorage.setItem('mailmind_rules',JSON.stringify(state.rules));}
+function populateRuleFolderSelect(selectedFolder) {
+  const sel = document.getElementById('ruleFolder');
+  if (!sel) return;
+  const folders = state.useOutlookFolders && state.outlookFolders.length
+    ? state.outlookFolders.map(f => f.displayName)
+    : (state.fixedFolders || [{name:'Trabalho'},{name:'Financeiro'},{name:'Marketing'},{name:'Pessoal'},{name:'Outros'}]).map(f => f.name);
+  sel.innerHTML = folders.map(n => `<option value="${escHtml(n)}" ${n===selectedFolder?'selected':''}>${escHtml(n)}</option>`).join('');
+}
+
+function openAddRule(){
+  document.getElementById('ruleName').value='';
+  document.getElementById('ruleCriteria').value='';
+  document.getElementById('rulePriority').value='medium';
+  document.getElementById('ruleAction').value='none';
+  document.getElementById('ruleActionTarget').value='';
+  toggleRuleActionTarget('none');
+  populateRuleFolderSelect('');
+  document.querySelector('#ruleModal .modal-title').textContent='Nova Regra de Classificação';
+  const btn=document.querySelector('#ruleModal .btn-save');
+  btn.textContent='Salvar Regra';
+  btn.onclick=saveRule;
+  document.getElementById('ruleModal').classList.add('open');
+}
+function closeModal(){document.getElementById('ruleModal').classList.remove('open');}
+function saveRule(){
+  const name=document.getElementById('ruleName').value.trim();
+  const criteria=document.getElementById('ruleCriteria').value.trim();
+  const folder=document.getElementById('ruleFolder').value;
+  const priority=document.getElementById('rulePriority').value;
+  const action=document.getElementById('ruleAction').value;
+  const actionTarget=document.getElementById('ruleActionTarget').value.trim();
+  if(!name||!criteria){showNotif('error','❌','Preencha nome e critério');return;}
+  if(action==='forward'&&!actionTarget){showNotif('error','❌','Informe o e-mail para encaminhar');return;}
+  const icons={Financeiro:'💰',Trabalho:'💼',Marketing:'📢',Pessoal:'👤',Outros:'📋'};
+  const colors={Financeiro:'rgba(29,158,117,0.15)',Trabalho:'rgba(124,110,250,0.15)',Marketing:'rgba(239,159,39,0.15)',Pessoal:'rgba(240,153,123,0.15)',Outros:'rgba(136,135,128,0.15)'};
+  state.rules.push({id:'r'+Date.now(),name,criteria,folder,priority,action,actionTarget,active:true,icon:icons[folder]||'📋',color:colors[folder]||''});
+  saveRules();renderRules();closeModal();
+  showNotif('success','✅','Regra adicionada!');
+}
+
+// ============================================================
+// CUSTOM FILTERS (User Defined)
+// ============================================================
+function renderFilterBar() {
+  const bar = document.getElementById('filterBar');
+  if (!bar) return;
+  
+  // Remove apenas os filtros dinâmicos antigos (preserva os fixos)
+  bar.querySelectorAll('.dynamic-filter').forEach(el => el.remove());
+
+  state.customFilters.forEach(filterName => {
+    const btn = document.createElement('button');
+    btn.className = 'filter-chip dynamic-filter';
+    
+    // Destaca se for o filtro atual OU se for a pasta atual
+    if (state.currentFilter === filterName || state.currentFolder === filterName) btn.classList.add('active');
+    
+    btn.textContent = filterName;
+    // Usa filterByFolder para carregar o conteúdo da pasta (funciona para subpastas)
+    btn.onclick = () => filterByFolder(filterName);
+    bar.appendChild(btn);
+  });
+}
+
+function addCustomFilterFromInput() {
+  const input = document.getElementById('newFilterInput');
+  const name = input.value.trim();
+  if (!name) return;
+  if (state.customFilters.includes(name)) { showNotif('warn','⚠️','Filtro já existe'); return; }
+  
+  state.customFilters.push(name);
+  localStorage.setItem('mailmind_custom_filters', JSON.stringify(state.customFilters));
+  input.value = '';
+  
+  renderFilterBar();
+  renderConfigFilters();
+  showNotif('success','✅',`Filtro "${name}" adicionado`);
+}
+
+function removeCustomFilter(name) {
+  state.customFilters = state.customFilters.filter(f => f !== name);
+  localStorage.setItem('mailmind_custom_filters', JSON.stringify(state.customFilters));
+  renderFilterBar();
+  renderConfigFilters();
+}
+
+function renderConfigFilters() {
+  const list = document.getElementById('configFilterList');
+  if (!list) return;
+  
+  if (state.customFilters.length === 0) {
+    list.innerHTML = '<span style="font-size:12px;color:var(--text3)">Nenhum filtro personalizado.</span>';
+    return;
+  }
+
+  list.innerHTML = state.customFilters.map(f => `
+    <div class="filter-chip" style="cursor:default; padding-right:6px;">
+      ${escHtml(f)}
+      <button onclick="removeCustomFilter('${escHtml(f)}')" style="border:none;background:none;color:var(--text3);cursor:pointer;margin-left:6px;font-weight:bold;">✕</button>
+    </div>
+  `).join('');
+}
+
+// ============================================================
+// FILTERS
+// ============================================================
+function setFilter(filter,btn){
+  state.currentFilter=filter; state.currentFolder=null;
+  document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
+  if(btn) btn.classList.add('active');
+  document.getElementById('panelTitle').textContent='Caixa de Entrada';
+
+  // Remove highlight de pastas
+  document.querySelectorAll('.folder-item').forEach(el=>el.classList.remove('active-folder'));
+
+  applyFilters();
+}
+async function filterByFolder(folder) {
+  // Garante que estamos na view de emails
+  if (state.currentView !== 'emails') switchView('emails', null);
+
+  // Se conectado, tenta buscar da pasta real no Outlook (Sincronização)
+  if (state.connected && state.accessToken) {
+    try {
+      // 1. Tenta encontrar na lista de pastas já carregada (inclui subpastas recursivas)
+      let fid = null;
+      if (state.outlookFolders && state.outlookFolders.length > 0) {
+        const found = state.outlookFolders.find(f => f.displayName.toLowerCase() === folder.toLowerCase());
+        if (found) fid = found.id;
+      }
+
+      // 2. Se não achou na memória, tenta resolver via API (pode criar se não existir, dependendo da lógica)
+      if (!fid) {
+        showStatus(`Localizando ${folder}...`);
+        fid = await getTargetFolderId(folder);
+      }
+
+      if (fid) {
+        await fetchEmailsByFolder(fid, folder);
+        // Atualiza a barra de filtros para refletir a pasta ativa
+        renderFilterBar(); 
+        return; // Sincronização feita, não usa filtro local
+      }
+    } catch(e) {
+      console.warn('Fallback local para folder:', e);
+      hideStatus();
+    }
+  }
+
+  // Fallback: modo offline ou erro na API -> filtro local
+  state.currentFolder=folder; state.currentFilter='all';
+  document.querySelectorAll('.filter-chip').forEach(c=>c.classList.remove('active'));
+  document.getElementById('panelTitle').textContent=folder;
+
+  // Highlight da pasta selecionada
+  document.querySelectorAll('.folder-item').forEach(el => {
+    const nameEl = el.querySelector('.folder-name');
+    el.classList.toggle('active-folder', nameEl?.textContent.trim() === folder);
+  });
+
+  applyFilters();
+}
+function filterEmails(){applyFilters();}
+function applyFilters(){
+  const search=document.getElementById('searchInput').value.toLowerCase();
+  let emails=[...state.emails];
+  if(state.currentFolder)emails=emails.filter(e=>e.folder===state.currentFolder);
+  else if(state.currentFilter==='unread')emails=emails.filter(e=>e.unread);
+  else if(state.currentFilter==='high_importance')emails=emails.filter(e=>e.importance==='high');
+  // Removido o else if dos customFilters aqui, pois agora eles agem como pastas via filterByFolder
+  if(search)emails=emails.filter(e=>e.subject.toLowerCase().includes(search)||e.from.toLowerCase().includes(search)||e.preview.toLowerCase().includes(search));
+  state.filteredEmails=emails;renderEmailList();
+}
+function updateUnreadBadge(){
+  const count = state.emails.filter(e=>e.unread).length;
+  document.getElementById('unreadBadge').textContent = count;
+  updateTabBadge();
+}
+
+// ============================================================
+// VIEW / TAB SWITCHING
+// ============================================================
+function switchView(view,btn){
+  state.currentView=view;
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  document.getElementById('emailPanel').style.display  =view==='emails'?'flex':'none';
+  document.getElementById('contentArea').style.display =view==='emails'?'flex':'none';
+  document.getElementById('rulesPanel').style.display  =view==='rules' ?'block':'none';
+  document.getElementById('configPanel').style.display =view==='config'?'block':'none';
+  if(view==='config') populateConfigPanel();
+}
+function switchTab(tab,btn){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  document.getElementById('detailTab').classList.toggle('active',tab==='detail');
+  document.getElementById('chatTab').classList.toggle('active',tab==='chat');
+  
+  if(tab==='chat') {
+    const msgs = document.getElementById('chatMessages');
+    if(msgs) setTimeout(() => msgs.scrollTop = msgs.scrollHeight, 50);
+  }
+}
+
+// ============================================================
+// RESIZE — painéis arrastáveis
+// ============================================================
+function initResize() {
+  // Larguras salvas
+  const savedSidebar = parseInt(localStorage.getItem('mm_sidebar_w')) || 260;
+  const savedEmail   = parseInt(localStorage.getItem('mm_email_w'))   || 380;
+
+  const sidebar    = document.querySelector('.sidebar');
+  const emailPanel = document.getElementById('emailPanel');
+  const main       = document.querySelector('.main');
+  const rulesPanel = document.getElementById('rulesPanel');
+  const configPanel= document.getElementById('configPanel');
+
+  // Aplica larguras salvas
+  applySidebarWidth(savedSidebar);
+  applyEmailWidth(savedEmail);
+
+  function applySidebarWidth(w) {
+    w = Math.max(180, Math.min(400, w));
+    sidebar.style.width = w + 'px';
+    main.style.marginLeft = w + 'px';
+    rulesPanel.style.left  = w + 'px';
+    configPanel.style.left = w + 'px';
+  }
+
+  function applyEmailWidth(w) {
+    w = Math.max(240, Math.min(600, w));
+    emailPanel.style.width = w + 'px';
+    emailPanel.style.flexShrink = '0';
+  }
+
+  // Cria handle entre sidebar e main
+  const handleSidebar = document.createElement('div');
+  handleSidebar.className = 'resize-handle resize-handle-sidebar';
+  document.body.appendChild(handleSidebar);
+
+  // Cria handle entre lista de e-mails e detalhe
+  const handleEmail = document.createElement('div');
+  handleEmail.className = 'resize-handle resize-handle-email';
+  document.body.appendChild(handleEmail);
+
+  function positionHandles() {
+    const sw = sidebar.getBoundingClientRect().width;
+    const ew = emailPanel.getBoundingClientRect().width;
+    handleSidebar.style.left = (sw - 3) + 'px';
+    // Handle de email só visível na view de emails
+    handleEmail.style.left   = (sw + ew - 3) + 'px';
+    handleEmail.style.display = state.currentView === 'emails' ? 'block' : 'none';
+  }
+
+  positionHandles();
+
+  // Drag sidebar
+  let dragging = null, startX = 0, startW = 0;
+
+  handleSidebar.addEventListener('mousedown', e => {
+    dragging = 'sidebar';
+    startX = e.clientX;
+    startW = sidebar.getBoundingClientRect().width;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  handleEmail.addEventListener('mousedown', e => {
+    dragging = 'email';
+    startX = e.clientX;
+    startW = emailPanel.getBoundingClientRect().width;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const delta = e.clientX - startX;
+    if (dragging === 'sidebar') {
+      const newW = startW + delta;
+      applySidebarWidth(newW);
+      localStorage.setItem('mm_sidebar_w', Math.max(180, Math.min(400, newW)));
+    } else {
+      const newW = startW + delta;
+      applyEmailWidth(newW);
+      localStorage.setItem('mm_email_w', Math.max(240, Math.min(600, newW)));
+    }
+    positionHandles();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = null;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+
+  // Reposiciona handles ao trocar view
+  const origSwitchView = switchView;
+  window._switchViewOrig = origSwitchView;
+  window.switchView = function(view, btn) {
+    origSwitchView(view, btn);
+    setTimeout(positionHandles, 10);
+  };
+}
+
+// ============================================================
+// BADGE NA ABA — título e favicon com contador de não lidos
+// ============================================================
+let _faviconCanvas = null;
+
+function updateTabBadge() {
+  const unread = state.emails.filter(e => e.unread).length;
+
+  // Atualiza título
+  const base = 'MailMind — Quality Transportes';
+  document.title = unread > 0 ? `(${unread}) ${base}` : base;
+
+  // Atualiza favicon com badge numérico
+  renderFaviconBadge(unread);
+}
+
+function renderFaviconBadge(count) {
+  if (!_faviconCanvas) {
+    _faviconCanvas = document.createElement('canvas');
+    _faviconCanvas.width  = 32;
+    _faviconCanvas.height = 32;
+  }
+  const canvas = _faviconCanvas;
+  const ctx    = canvas.getContext('2d');
+  ctx.clearRect(0, 0, 32, 32);
+
+  // Ícone base — círculo roxo com ✦
+  ctx.fillStyle = '#7C6EFA';
+  ctx.beginPath();
+  ctx.roundRect(2, 2, 28, 28, 6);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('M', 16, 16);
+
+  // Badge vermelho com número
+  if (count > 0) {
+    const label = count > 99 ? '99+' : String(count);
+    const bx = 32, by = 0, br = 10;
+    ctx.fillStyle = '#E24B4A';
+    ctx.beginPath();
+    ctx.arc(bx - br, by + br, br, 0, 2 * Math.PI);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, bx - br, by + br);
+  }
+
+  // Atualiza o <link rel="icon">
+  let link = document.querySelector("link[rel~='icon']");
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    document.head.appendChild(link);
+  }
+  link.href = canvas.toDataURL('image/png');
+}
+
+// ============================================================
+// POLLING — novos e-mails sem recarregar a página
+// ============================================================
+let _pollingTimer = null;
+
+function startPolling() {
+  stopPolling();
+  const interval = 60000; // verifica a cada 60 segundos
+  _pollingTimer = setInterval(checkNewEmails, interval);
+}
+
+function stopPolling() {
+  if (_pollingTimer) { clearInterval(_pollingTimer); _pollingTimer = null; }
+}
+
+async function checkNewEmails() {
+  if (!state.accessToken || !state.connected) return;
+
+  // Evita polling se estiver vendo uma pasta específica que não seja Inbox
+  // para não misturar e-mails novos da entrada dentro da pasta "Financeiro", por exemplo.
+  if (state.currentFolder && state.currentFolder !== 'Caixa de Entrada') return;
+
+  // Pega o ID do e-mail mais recente que já temos
+  const newestDate = state.emails.length > 0 ? state.emails[0].date : null;
+
+  // Constrói URL base
+  let url = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=20` +
+      `&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance,conversationId` +
+      `&$orderby=receivedDateTime desc`;
+
+  // Se tiver e-mails na lista, filtra apenas pelos mais novos que o topo
+  if (newestDate) {
+    const filter = encodeURIComponent(`receivedDateTime gt ${newestDate}`);
+    url += `&$filter=${filter}`;
+  }
+
+  try {
+    const res = await fetch(url, { headers: {
+          Authorization: `Bearer ${state.accessToken}`,
+          'Prefer': 'outlook.body-content-type="html"',
+      }}
+    );
+    if (!res.ok) return;
+    const data = await res.json();
+    const newEmails = (data.value || []).map(buildEmailObj);
+
+    if (newEmails.length === 0) return;
+
+    // Filtra os que realmente ainda não estão na lista
+    const existingIds = new Set(state.emails.map(e => e.id));
+    const toAdd = newEmails.filter(e => !existingIds.has(e.id));
+    if (toAdd.length === 0) return;
+
+    // Insere no início
+    state.emails = [...toAdd, ...state.emails];
+    state.filteredEmails = [...toAdd, ...state.filteredEmails];
+
+    toAdd.forEach(e => addNotification('mail', 'Novo E-mail', e.subject, e.id));
+    renderEmailList();
+    updateUnreadBadge();
+    renderPagination();
+    
+    // Atualiza contadores de pastas (Outlook) para manter sincronizado
+    loadOutlookFolders();
+
+    // Dispara classificação automática se habilitado
+    const cfg = loadConfig();
+    if (cfg.autoClassify && toAdd.length > 0) {
+      classifyBatch(toAdd);
+    }
+
+    const plural = toAdd.length > 1 ? 's' : '';
+    showNotif('success', '📬', `${toAdd.length} novo${plural} e-mail${plural} recebido${plural}!`);
+  } catch(e) { console.warn('checkNewEmails:', e); }
+}
+
+// ============================================================
+// BOOTSTRAP
+// ============================================================
+init();
+document.addEventListener('DOMContentLoaded', initResize);
+// Fallback caso DOMContentLoaded já tenha disparado
+if (document.readyState !== 'loading') initResize();
