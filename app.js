@@ -753,21 +753,6 @@ async function submitShareFolder() {
   else showNotif('error','❌',`${ok} enviado(s), ${fail} com erro.`);
 }
 // ============================================================
-async function sendReply(emailId, comment, toAll) {
-  const endpoint = toAll ? 'replyAll' : 'reply';
-  await fetch(`https://graph.microsoft.com/v1.0/me/messages/${emailId}/${endpoint}`, {
-    method:'POST',
-    headers:{Authorization:`Bearer ${state.accessToken}`,'Content-Type':'application/json'},
-    body:JSON.stringify({ comment }),
-  });
-}
-async function sendForward(emailId, toAddress, bodyHtml) {
-  await fetch(`https://graph.microsoft.com/v1.0/me/messages/${emailId}/forward`, {
-    method:'POST',
-    headers:{Authorization:`Bearer ${state.accessToken}`,'Content-Type':'application/json'},
-    body:JSON.stringify({toRecipients:[{emailAddress:{address:toAddress}}],comment:bodyHtml}),
-  });
-}
 async function deleteEmail(emailId) {
   await fetch(`https://graph.microsoft.com/v1.0/me/messages/${emailId}`,{
     method:'DELETE', headers:{Authorization:`Bearer ${state.accessToken}`},

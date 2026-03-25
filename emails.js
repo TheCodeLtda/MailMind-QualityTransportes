@@ -9,20 +9,31 @@ function renderEmailList() {
     return;
   }
   list.innerHTML = state.filteredEmails.map(e => {
-    const selected = state.selectedEmail?.id === e.id;
+    const initials = getInitials(e.fromName || e.from), 
+          color = getAvatarColor(e.from), 
+          relDate = formatRelativeDate(e.date), 
+          selected = state.selectedEmail?.id === e.id;
     return `
-      <div class="email-item ${e.unread?'unread':''} ${selected?'selected':''}" onclick="selectEmail('${e.id}')">
+      <div class="email-item ${e.unread?'unread':''} ${selected?'selected':''}" onclick="selectEmail('${e.id}')" oncontextmenu="openEmailContextMenu(event,'${e.id}')">
         <div class="email-item-inner">
           <div class="email-avatar-col">
-            <div class="list-avatar" style="background:${getAvatarColor(e.from)}">${getInitials(e.fromName)}</div>
+            <div class="list-avatar" style="background:${color}">${initials}</div>
+            ${e.unread ? '<div class="unread-dot"></div>' : ''}
           </div>
           <div class="email-content-col">
             <div class="email-meta">
-              <span class="email-sender">${escHtml(e.fromName)}</span>
-              <span class="email-date">${formatRelativeDate(e.date)}</span>
+              <span class="email-sender">${escHtml(e.fromName || e.from)}</span>
+              <div class="email-date-row">
+                ${e.importance === 'high' ? '<span class="importance-icon" title="Alta importância">🔴</span>' : ''}
+                ${e.hasAttachments ? '<span class="attach-icon" title="Tem anexos">📎</span>' : ''}
+                <span class="email-date">${relDate}</span>
+              </div>
             </div>
             <div class="email-subject">${escHtml(e.subject)}</div>
-            <div class="email-preview">${escHtml(e.preview)}</div>
+            <div class="email-bottom-row">
+              <div class="email-preview">${escHtml(e.preview)}</div>
+              ${e.folder && e.tag ? `<span class="email-tag ${e.tag}">${e.folder}</span>` : ''}
+            </div>
           </div>
         </div>
       </div>`;
@@ -39,24 +50,41 @@ function selectEmail(id) {
   renderEmailList();
   renderEmailDetail(state.selectedEmail);
   switchTab('detail', document.querySelectorAll('.tab')[0]);
+  if (typeof updateUnreadBadge === 'function') updateUnreadBadge();
 }
 
 function renderEmailDetail(email) {
   const detail = document.getElementById('detailTab');
+  const initials = getInitials(email.fromName || email.from), color = getAvatarColor(email.from);
+  const toList = (email.to || []).join(', ') || '—';
+  const dateStr = email.date ? new Date(email.date).toLocaleString('pt-BR') : '';
+
   detail.innerHTML = `
     <div class="detail-header">
       <div class="detail-subject">${escHtml(email.subject)}</div>
       <div class="detail-from">
-        <div class="avatar" style="background:${getAvatarColor(email.from)}">${getInitials(email.fromName)}</div>
+        <div class="avatar" style="background:${color}">${initials}</div>
         <div class="from-info">
-          <div class="from-name">${escHtml(email.fromName)}</div>
+          <div class="from-name">${escHtml(email.fromName || email.from)}</div>
           <div class="from-email">${escHtml(email.from)}</div>
         </div>
+        ${email.importance === 'high' ? '<span class="importance-badge">Alta prioridade</span>' : ''}
+      </div>
+      <div class="detail-recipients">
+        <span class="recipient-label">Para:</span> <span class="recipient-value">${escHtml(toList)}</span>
+        ${email.cc?.length ? `<br/><span class="recipient-label">CC:</span> <span class="recipient-value">${escHtml(email.cc.join(', '))}</span>` : ''}
+        <br/><span class="recipient-label">Data:</span> <span class="recipient-value">${dateStr}</span>
       </div>
       <div class="detail-actions">
         <button class="action-btn primary" onclick="summarizeSelected()">✨ Resumir com IA</button>
-        <button class="action-btn" onclick="openComposer('reply')">Responder</button>
-        <button class="action-btn" onclick="deleteSelected()">🗑 Excluir</button>
+        <button class="action-btn" onclick="openComposer('reply')">↩ Responder</button>
+        <button class="action-btn" onclick="openComposer('replyAll')">↩↩ Resp. todos</button>
+        <button class="action-btn" onclick="openComposer('forward')">→ Encaminhar</button>
+        <button class="action-btn" onclick="deleteSelected()" style="color:var(--danger)">🗑 Excluir</button>
+        <select class="move-select" onchange="moveSelectedToFolder(this.value);this.value=''">
+          <option value="">Mover para...</option>
+          ${typeof buildFolderOptions === 'function' ? buildFolderOptions() : ''}
+        </select>
       </div>
     </div>
     <div class="ai-summary-box" id="aiSummaryBox" style="display:none">
@@ -70,16 +98,25 @@ function openComposer(mode) {
   const email = state.selectedEmail;
   document.getElementById('composerPanel')?.remove();
   
-  let toVal = mode === 'forward' ? '' : email.from;
-  let ccVal = mode === 'replyAll' ? (email.cc || []).join(', ') : '';
+  let toVal = "";
+  let ccVal = "";
+
+  if (mode === 'reply' || mode === 'replyAll') {
+    toVal = email.from;
+    if (mode === 'replyAll') {
+      const otherTo = (email.to || []).filter(addr => addr.toLowerCase() !== email.from.toLowerCase());
+      if (otherTo.length > 0) toVal += ', ' + otherTo.join(', ');
+      ccVal = (email.cc || []).join(', ');
+    }
+  }
   const subjectVal = (mode === 'forward' ? 'Enc: ' : 'Re: ') + email.subject;
 
   const panel = document.createElement('div');
   panel.id = 'composerPanel'; panel.className = 'composer-panel';
   panel.innerHTML = `
     <div class="composer-header">
-      <span class="composer-title">${mode}</span>
-      <button onclick="this.parentElement.parentElement.remove()">✕</button>
+      <span class="composer-title">${mode === 'forward' ? 'Encaminhar' : mode === 'replyAll' ? 'Responder a todos' : 'Responder'}</span>
+      <button class="composer-close" onclick="this.parentElement.parentElement.remove()">✕</button>
     </div>
     <div class="composer-fields">
       <div class="composer-field"><label>Para</label><input id="composerTo" value="${escHtml(toVal)}"/></div>
@@ -110,5 +147,20 @@ async function submitComposer(mode, id) {
 
 function buildEmailObj(m) {
   const isHtml = (m.body?.contentType || '').toLowerCase() === 'html';
-  return { id: m.id, from: m.from?.emailAddress?.address || '', fromName: m.from?.emailAddress?.name || '', subject: m.subject || '', preview: m.bodyPreview || '', bodyHtml: isHtml ? m.body.content : '', bodyText: stripHtml(m.body?.content || ''), date: m.receivedDateTime, unread: !m.isRead, hasAttachments: m.hasAttachments, importance: m.importance, conversationId: m.conversationId };
+  return { 
+    id: m.id, 
+    from: m.from?.emailAddress?.address || '', 
+    fromName: m.from?.emailAddress?.name || '', 
+    to: (m.toRecipients || []).map(r => r.emailAddress?.address).filter(Boolean),
+    cc: (m.ccRecipients || []).map(r => r.emailAddress?.address).filter(Boolean),
+    subject: m.subject || '', 
+    preview: m.bodyPreview || '', 
+    bodyHtml: isHtml ? m.body.content : '', 
+    bodyText: stripHtml(m.body?.content || ''), 
+    date: m.receivedDateTime, 
+    unread: !m.isRead, 
+    hasAttachments: m.hasAttachments, 
+    importance: m.importance, 
+    conversationId: m.conversationId 
+  };
 }
