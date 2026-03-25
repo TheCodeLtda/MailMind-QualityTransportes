@@ -1352,6 +1352,36 @@ async function testGeminiConnection() {
     showNotif('error', '❌', `Falha na conexão: ${error.message}`);
   }
 }
+async function getAiPartsForEmail(email, textPrompt) {
+  const parts = [{ text: textPrompt }];
+  if (!state.accessToken || !email.hasAttachments) return parts;
+
+  try {
+    const attachments = await fetchAttachments(email.id);
+    let totalSize = 0;
+    for (const att of attachments) {
+      // Filtramos apenas anexos de arquivo que tenham conteúdo e sejam suportados (Imagens e PDF)
+      if (att['@odata.type'] === '#microsoft.graph.fileAttachment' && att.contentBytes) {
+        const mime = att.contentType;
+        const isSupported = mime === 'application/pdf' || mime.startsWith('image/');
+        
+        // Limite de segurança: Evitar payloads gigantes que quebram o limite do Vercel (4.5MB)
+        const size = (att.contentBytes.length * 3) / 4; // Estimativa de tamanho original do base64
+        if (isSupported && (totalSize + size) < 3000000) { 
+          parts.push({
+            inlineData: {
+              mimeType: mime,
+              data: att.contentBytes
+            }
+          });
+          totalSize += size;
+        }
+      }
+    }
+  } catch (e) { console.warn("Erro ao processar anexos para IA:", e); }
+  return parts;
+}
+
 // ============================================================
 // AI — CLASSIFY & SUMMARIZE
 // ============================================================
@@ -1534,9 +1564,10 @@ async function classifyEmail(email) {
 
   const rulesText=activeRules.map(r=>`- Pasta "${r.folder}": ${r.criteria}`).join('\n');
   const bodyText=email.bodyText||stripHtml(email.bodyHtml||'')||email.preview||'';
-  const prompt=`Classifique este e-mail. Responda APENAS com o nome da pasta.\n\nRegras:\n${rulesText}\n- "Outros": demais casos\n\nRemetente: ${email.from}\nAssunto: ${email.subject}\nCorpo: ${bodyText.substring(0,800)}\n\nPasta:`;
+  const prompt=`Classifique este e-mail (analise também os anexos se fornecidos). Responda APENAS com o nome da pasta.\n\nRegras:\n${rulesText}\n- "Outros": demais casos\n\nRemetente: ${email.from}\nAssunto: ${email.subject}\nCorpo: ${bodyText.substring(0,800)}\n\nPasta:`;
   try {
-    const res=await geminiApi([{role:'user', parts:[{text:prompt}]}]);
+    const parts = await getAiPartsForEmail(email, prompt);
+    const res=await geminiApi([{role:'user', parts: parts}]);
     const text=res.candidates?.[0]?.content?.parts?.[0]?.text?.trim()||'Outros';
     // Valida se a resposta corresponde a uma regra ativa (ou Outros)
     const allowed = [...new Set(activeRules.map(r => r.folder).concat(['Outros']))];
@@ -1551,9 +1582,10 @@ async function summarizeSelected() {
   if(!cfg.claudeApiKey){document.getElementById('aiSummaryText').textContent='Configure a chave da API.';return;}
   const email=state.selectedEmail;
   const bodyText=email.bodyText||stripHtml(email.bodyHtml||'')||email.preview||'';
-  const prompt=`Faça um resumo executivo em português, 2-3 frases. Destaque o ponto principal e ação necessária.\n\nDe: ${email.fromName} <${email.from}>\nAssunto: ${email.subject}\nCorpo:\n${bodyText.substring(0,1500)}`;
+  const prompt=`Faça um resumo executivo em português (considere o texto e o conteúdo dos anexos visualizados), 2-3 frases. Destaque o ponto principal e ação necessária.\n\nDe: ${email.fromName} <${email.from}>\nAssunto: ${email.subject}\nCorpo:\n${bodyText.substring(0,1500)}`;
   try {
-    const res=await geminiApi([{role:'user', parts:[{text:prompt}]}]);
+    const parts = await getAiPartsForEmail(email, prompt);
+    const res=await geminiApi([{role:'user', parts: parts}]);
     document.getElementById('aiSummaryText').textContent=res.candidates?.[0]?.content?.parts?.[0]?.text||'Não foi possível gerar o resumo.';
   } catch(e){document.getElementById('aiSummaryText').textContent='Erro: '+e.message;}
 }
@@ -1592,10 +1624,11 @@ async function submitAiAction() {
   btn.disabled = true;
 
   const bodyText = email.bodyText || stripHtml(email.bodyHtml||'') || email.preview || '';
-  const prompt = `Analise o seguinte e-mail e responda à pergunta do usuário.\n\nE-mail De: ${email.fromName} <${email.from}>\nAssunto: ${email.subject}\nData: ${email.dateFormatted}\n\nConteúdo:\n${bodyText.substring(0, 2500)}\n\n---\nPergunta do usuário: ${question}`;
+  const prompt = `Analise o seguinte e-mail e seus anexos para responder à pergunta.\n\nE-mail De: ${email.fromName} <${email.from}>\nAssunto: ${email.subject}\nData: ${email.dateFormatted}\n\nConteúdo:\n${bodyText.substring(0, 2500)}\n\n---\nPergunta do usuário: ${question}`;
 
   try {
-    const res = await geminiApi([{ role: 'user', parts: [{ text: prompt }] }]);
+    const parts = await getAiPartsForEmail(email, prompt);
+    const res = await geminiApi([{ role: 'user', parts: parts }]);
     const text = res.candidates?.[0]?.content?.parts?.[0]?.text || 'Não consegui processar a resposta.';
     responseDiv.innerHTML = formatText(text); // Usa o formatText existente para negrito e quebras de linha
   } catch (e) {
