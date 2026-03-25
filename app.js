@@ -70,19 +70,13 @@ function showNotif(type,icon,text) {
 // ============================================================
 function toggleNotificationCenter() {
   const center = document.getElementById('notifCenter');
-  center.classList.toggle('open');
+  const overlay = document.getElementById('notifOverlay');
+  
+  const isOpen = center.classList.toggle('open');
+  overlay.classList.toggle('open', isOpen);
+
   if (center.classList.contains('open')) {
     renderNotifications();
-    // Fecha ao clicar fora
-    setTimeout(() => {
-      const closeHandler = (e) => {
-        if (!center.contains(e.target) && !document.getElementById('notifBellBtn').contains(e.target)) {
-          center.classList.remove('open');
-          document.removeEventListener('click', closeHandler);
-        }
-      };
-      document.addEventListener('click', closeHandler);
-    }, 10);
   }
 }
 
