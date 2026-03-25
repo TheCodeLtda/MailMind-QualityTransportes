@@ -92,6 +92,7 @@ function addNotification(type, title, message, emailId = null) {
   };
   state.notifications.unshift(notif);
   if (state.notifications.length > 50) state.notifications.pop();
+  localStorage.setItem('mm_notifications', JSON.stringify(state.notifications));
   updateNotifBadge();
   if (document.getElementById('notifCenter').classList.contains('open')) renderNotifications();
 }
@@ -145,17 +146,19 @@ function setNotifFilter(filter) {
 
 function markNotifRead(id) {
   const n = state.notifications.find(not => not.id === id);
-  if (n) { n.read = true; updateNotifBadge(); renderNotifications(); }
+  if (n) { n.read = true; localStorage.setItem('mm_notifications', JSON.stringify(state.notifications)); updateNotifBadge(); renderNotifications(); }
 }
 
 function markAllNotifsRead() {
   state.notifications.forEach(n => n.read = true);
+  localStorage.setItem('mm_notifications', JSON.stringify(state.notifications));
   updateNotifBadge();
   renderNotifications();
 }
 
 function clearNotifications() {
   state.notifications = [];
+  localStorage.removeItem('mm_notifications');
   updateNotifBadge();
   renderNotifications();
 }
@@ -180,7 +183,7 @@ const state = {
   currentView:'emails', rules:[], config:{}, chatHistory:[],
   page: { current:1, nextLink:null, prevLinks:[], total:null, pageSize:50 },
   outlookFolders: [],
-  notifications: [],
+  notifications: JSON.parse(localStorage.getItem('mm_notifications') || '[]'),
   notifFilter: 'all',
   useOutlookFolders: false,
   folderCache: {}, // Cache de IDs de pastas para performance
@@ -1625,6 +1628,7 @@ async function classifyBatch(emailsToProcess) {
       const matchedRule = state.rules.find(r => r.active && r.folder === folder);
       
       if (matchedRule) {
+        addNotification('ai', 'Classificação Automática', `E-mail "${email.subject.substring(0,20)}..." movido para ${folder}`, email.id);
         email.folder = folder; 
         email.tag = tagMap[folder]||'';
 
@@ -1677,6 +1681,7 @@ async function classifySelected() {
     return;
   }
 
+  addNotification('ai', 'Classificação Manual', `E-mail "${email.subject.substring(0,20)}..." movido para ${folder}`, email.id);
   email.folder = folder; email.tag = tagMap[folder]||'';
   if (state.connected && state.accessToken) {
     await moveEmail(email.id, folder);
