@@ -183,7 +183,7 @@ const state = {
   currentView:'emails', rules:[], config:{}, chatHistory:[],
   page: { current:1, nextLink:null, prevLinks:[], total:null, pageSize:50 },
   outlookFolders: [],
-  notifications: JSON.parse(localStorage.getItem('mm_notifications') || '[]'),
+  notifications: [],
   notifFilter: 'all',
   useOutlookFolders: false,
   folderCache: {}, // Cache de IDs de pastas para performance
@@ -1571,13 +1571,13 @@ async function classifyAllEmails() {
         // Contabiliza para o relatório final
         actionSummary[matchedRule.name] = (actionSummary[matchedRule.name] || 0) + 1;
 
+        addNotification('ai', 'Classificação Automática', `E-mail "${email.subject.substring(0,20)}..." movido para ${folder}`, email.id);
+
         if(state.connected && state.accessToken){
-          addNotification('ai', 'Classificação Automática', `E-mail "${email.subject.substring(0,20)}..." movido para ${folder}`, email.id);
           await moveEmail(email.id, folder);
           // Executa ação automática da regra correspondente (se houver)
           if (matchedRule.action && matchedRule.action !== 'none') await executeRuleAction(email, matchedRule);
         }
-
         // Remove da visualização atual (feedback visual instantâneo)
         state.emails = state.emails.filter(e => e.id !== email.id);
         state.filteredEmails = state.filteredEmails.filter(e => e.id !== email.id);
@@ -1628,7 +1628,6 @@ async function classifyBatch(emailsToProcess) {
       const matchedRule = state.rules.find(r => r.active && r.folder === folder);
       
       if (matchedRule) {
-        addNotification('ai', 'Classificação Automática', `E-mail "${email.subject.substring(0,20)}..." movido para ${folder}`, email.id);
         email.folder = folder; 
         email.tag = tagMap[folder]||'';
 
@@ -1681,7 +1680,6 @@ async function classifySelected() {
     return;
   }
 
-  addNotification('ai', 'Classificação Manual', `E-mail "${email.subject.substring(0,20)}..." movido para ${folder}`, email.id);
   email.folder = folder; email.tag = tagMap[folder]||'';
   if (state.connected && state.accessToken) {
     await moveEmail(email.id, folder);
