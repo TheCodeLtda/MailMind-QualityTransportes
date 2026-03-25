@@ -1,13 +1,13 @@
 # MailMind — Contexto do Projeto
 
 ## O que é
-Aplicativo web de automação de e-mails do Outlook com IA (Claude). Permite ler, classificar e mover e-mails para pastas automaticamente, além de um assistente de chat em linguagem natural para interagir com a caixa de entrada.
+Aplicativo web de automação de e-mails do Outlook com IA (Google Gemini). Permite ler, classificar e mover e-mails para pastas automaticamente, além de um assistente de chat em linguagem natural para interagir com a caixa de entrada.
 
 ---
 
 ## Stack
 - **Frontend:** HTML + CSS + JS puro (sem framework)
-- **IA:** Claude API (Anthropic) via proxy serverless
+- **IA:** Google Gemini API via proxy serverless
 - **E-mails:** Microsoft Graph API (OAuth 2.0 — fluxo implícito SPA)
 - **Hospedagem:** Vercel — https://mail-mind-quality-transportes.vercel.app
 
@@ -40,13 +40,13 @@ Aplicativo web de automação de e-mails do Outlook com IA (Claude). Permite ler
 ## Variáveis de ambiente no Vercel
 | Nome | Valor |
 |------|-------|
-| `ANTHROPIC_API_KEY` | `sk-ant-...` (já configurada) |
+| `GEMINI_API_KEY` | `AIzaSy...` (configurada no Vercel) |
 
 ---
 
 ## Funcionalidades implementadas
 - [x] Tela de setup inicial (chave Claude + credenciais Azure)
-- [x] Sidebar com navegação, pastas e botão de conexão
+- [x] Sidebar com navegação, árvore de pastas real do Outlook e botão de conexão
 - [x] Lista de e-mails com busca e filtros por pasta
 - [x] Visualização de e-mail com resumo por IA
 - [x] Classificação automática de e-mails com Claude
@@ -57,36 +57,16 @@ Aplicativo web de automação de e-mails do Outlook com IA (Claude). Permite ler
 
 ---
 
-## Problema pendente — Proxy Claude (CORS)
-A chamada para a API do Claude estava sendo bloqueada pelo navegador (CORS). A solução foi criar `api/claude.js` como função serverless no Vercel.
-
-**Status atual:** o proxy está sendo chamado corretamente (`POST /api/claude` aparece no console), mas retorna erro `JSON.parse: unexpected character at line 1 column 1` — indicando que o Vercel está retornando HTML de erro (provavelmente 404 ou 500) em vez de JSON.
-
-**Possíveis causas a investigar:**
-1. Vercel não está reconhecendo `api/claude.js` como função serverless (pode precisar de `package.json` na raiz)
-2. Sintaxe `export default` pode não ser suportada sem configuração de módulo ES — tentar converter para `module.exports`
-3. O `vercel.json` atual pode estar com configuração incorreta de runtime
-
-**Próximo passo sugerido:** converter `api/claude.js` para CommonJS e adicionar `package.json` na raiz.
+## Arquitetura de IA (Proxy Serverless)
+Para evitar erros de CORS e exposição de chaves no frontend, todas as chamadas de IA passam por funções serverless no Vercel (`/api/gemini`). O frontend envia apenas o conteúdo, e o proxy injeta a chave de API segura armazenada nas variáveis de ambiente.
 
 ---
 
 ## Melhorias desejadas (a definir no próximo chat)
-- [ ] Resolver o proxy do Claude definitivamente
-- [ ] Outras melhorias a combinar
+- [ ] Finalizar refatoração do CSS para arquivos modulares.
+- [ ] Implementar sistema de cache offline para e-mails.
 
 ---
 
 ## Como usar o contexto
 Cole este documento no início de um novo chat com o Claude e diga o que quer melhorar. O Claude terá todo o contexto necessário para continuar o projeto de onde paramos.
-
-## Novas estruturas de arquivos 
-utils.js — helpers puros (escHtml, format*, getInitials, etc.)
-state.js — estado global, constantes, config
-api-graph.js — todas as chamadas ao Microsoft Graph
-api-ai.js — Gemini, classificação, resumo, chat
-folders.js — pastas (CRUD, render, filtros)
-emails.js — lista, detalhe, render, composer
-rules.js — regras de classificação
-ui.js — notificações, setup, views, resize, polling, favicon
-app.js — apenas inicialização (init, loadApp) + imports
