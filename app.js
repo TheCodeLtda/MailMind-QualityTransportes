@@ -1336,6 +1336,7 @@ async function classifyBatch(emailsToProcess) {
         email.tag = tagMap[folder]||'';
 
         actionSummary[matchedRule.name] = (actionSummary[matchedRule.name] || 0) + 1;
+        addNotification('ai', 'Classificação Automática', `E-mail "${email.subject.substring(0, 50)}..." movido para ${folder}`, email.id);
         
         if(state.connected && state.accessToken) {
           await moveEmail(email.id, folder);

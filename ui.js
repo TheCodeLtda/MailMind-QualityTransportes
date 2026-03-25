@@ -77,7 +77,11 @@ function markNotifRead(id) {
     saveNotifications();
     updateNotifBadge();
     renderNotifications();
-    if (n.emailId && state.currentView === 'emails' && typeof selectEmail === 'function') {
+    if (n.emailId && typeof selectEmail === 'function') {
+        // Garante que a visualização de e-mails esteja ativa antes de selecionar o e-mail
+        if (state.currentView !== 'emails') {
+            switchView('emails', null);
+        }
         selectEmail(n.emailId);
         toggleNotificationCenter();
     }

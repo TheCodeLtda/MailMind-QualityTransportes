@@ -40,8 +40,31 @@ function renderEmailList() {
   }).join('');
 }
 
-function selectEmail(id) {
-  state.selectedEmail = state.emails.find(e => e.id === id);
+async function selectEmail(id) {
+  let email = state.emails.find(e => e.id === id);
+
+  if (!email && state.accessToken) {
+    // Email not in current list, try fetching directly from API
+    try {
+      const res = await fetch(`https://graph.microsoft.com/v1.0/me/messages/${id}`, {
+        headers: { Authorization: `Bearer ${state.accessToken}`, 'Prefer': 'outlook.body-content-type="html"' }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        email = buildEmailObj(data); // Use buildEmailObj to format the fetched email
+      } else {
+        console.error('Failed to fetch email from API:', res.status, await res.text());
+        showNotif('error', '❌', 'Não foi possível carregar o e-mail. Ele pode ter sido movido ou excluído.');
+        return;
+      }
+    } catch (e) {
+      console.error('Error fetching email by ID:', e);
+      showNotif('error', '❌', 'Erro ao carregar o e-mail.');
+      return;
+    }
+  }
+
+  state.selectedEmail = email;
   if (!state.selectedEmail) return;
   if (state.selectedEmail.unread) {
     state.selectedEmail.unread = false;
