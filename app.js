@@ -951,7 +951,26 @@ function openComposer(mode) {
   const email = state.selectedEmail; if (!email) return;
   document.getElementById('composerPanel')?.remove();
 
-  const toVal      = mode==='forward' ? '' : email.from;
+  let toVal = "";
+  let ccVal = "";
+
+  if (mode === 'forward') {
+    toVal = "";
+    ccVal = "";
+  } else if (mode === 'reply') {
+    toVal = email.from;
+    ccVal = "";
+  } else if (mode === 'replyAll') {
+    // No responder a todos, incluímos o remetente e os outros destinatários originais no "Para"
+    // e mantemos os que estavam em cópia no campo "CC"
+    toVal = email.from;
+    if (email.to && email.to.length > 0) {
+      const otherTo = email.to.filter(addr => addr.toLowerCase() !== email.from.toLowerCase());
+      if (otherTo.length > 0) toVal += ', ' + otherTo.join(', ');
+    }
+    ccVal = (email.cc || []).join(', ');
+  }
+
   const subjectVal = (mode==='forward'?'Enc: ':'Re: ') + email.subject;
 
   const panel = document.createElement('div');
@@ -964,6 +983,8 @@ function openComposer(mode) {
     <div class="composer-fields">
       <div class="composer-field"><label>Para</label>
         <input id="composerTo" type="text" value="${escHtml(toVal)}" placeholder="destinatario@email.com"/></div>
+      <div class="composer-field"><label>CC</label>
+        <input id="composerCc" type="text" value="${escHtml(ccVal)}" placeholder="copia@email.com"/></div>
       <div class="composer-field"><label>Assunto</label>
         <input id="composerSubject" type="text" value="${escHtml(subjectVal)}" readonly/></div>
     </div>
@@ -981,15 +1002,20 @@ function openComposer(mode) {
 async function submitComposer(mode, id) {
   if(!state.accessToken) return;
   const to   = document.getElementById('composerTo')?.value.trim();
+  const cc   = document.getElementById('composerCc')?.value.trim() || '';
   const text = document.getElementById('composerBody')?.value.trim()||'';
+  
   if(mode==='forward'&&!to){showNotif('error','❌','Informe o destinatário');return;}
   if(!text){showNotif('error','❌','Escreva uma mensagem');return;}
 
   const btn=document.getElementById('composerSendBtn');
   if(btn){btn.textContent='Enviando...';btn.disabled=true;}
   try {
-    if(mode==='forward') await sendForward(id, to, text);
-    else await sendReply(id, text, mode==='replyAll');
+    if(mode==='forward') {
+      await sendForward(id, to, cc, text);
+    } else {
+      await sendReply(id, text, to, cc, mode==='replyAll');
+    }
     document.getElementById('composerPanel')?.remove();
     showNotif('success','✅','Mensagem enviada!');
   } catch(e){
