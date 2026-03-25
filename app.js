@@ -25,6 +25,7 @@ function loadApp(cfg) {
   renderRules();
   renderFilterBar(); // Renderiza filtros personalizados
   renderEmailList();
+  if (typeof updateNotifBadge === 'function') updateNotifBadge();
   updateUnreadBadge();
   renderChatHistory();
 

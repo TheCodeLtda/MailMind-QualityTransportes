@@ -28,7 +28,7 @@ function toggleNotificationCenter() {
 function addNotification(type, title, message, emailId = null) {
   const notif = { id: Date.now(), type, title, message, emailId, time: new Date(), read: false };
   state.notifications.unshift(notif);
-  localStorage.setItem('mm_notifications', JSON.stringify(state.notifications.slice(0, 50)));
+  saveNotifications();
   updateNotifBadge();
   if (document.getElementById('notifCenter').classList.contains('open')) renderNotifications();
 }
@@ -42,11 +42,72 @@ function updateNotifBadge() {
 
 function renderNotifications() {
   const list = document.getElementById('notifList');
-  list.innerHTML = state.notifications.map(n => `
-    <div class="notif-item ${n.read ? 'read' : ''}" onclick="markNotifRead(${n.id})">
-      <div class="notif-title">${escHtml(n.title)}</div>
-      <div class="notif-message">${escHtml(n.message)}</div>
-    </div>`).join('');
+  if (!list) return;
+
+  const filtered = state.notifications.filter(n => {
+    if (state.notifFilter === 'unread') return !n.read;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    list.innerHTML = `<div class="notif-empty">Nenhuma notificação ${state.notifFilter === 'unread' ? 'não lida ' : ''}encontrada.</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(n => {
+    const icon = n.type === 'mail' ? '📧' : n.type === 'ai' ? '🤖' : '🔔';
+    const time = formatRelativeDate(n.time);
+    return `
+      <div class="notif-item ${n.read ? 'read' : ''}" onclick="markNotifRead(${n.id})">
+        <div class="notif-icon">${icon}</div>
+        <div class="notif-content">
+          <div class="notif-title">${escHtml(n.title)}</div>
+          <div class="notif-message">${escHtml(n.message)}</div>
+          <div class="notif-time">${time}</div>
+        </div>
+        ${!n.read ? '<div class="notif-unread-dot"></div>' : ''}
+      </div>`;
+  }).join('');
+}
+
+function markNotifRead(id) {
+  const n = state.notifications.find(notif => notif.id === id);
+  if (n) {
+    n.read = true;
+    saveNotifications();
+    updateNotifBadge();
+    renderNotifications();
+    if (n.emailId && state.currentView === 'emails' && typeof selectEmail === 'function') {
+        selectEmail(n.emailId);
+        toggleNotificationCenter();
+    }
+  }
+}
+
+function markAllNotifsRead() {
+  state.notifications.forEach(n => n.read = true);
+  saveNotifications();
+  updateNotifBadge();
+  renderNotifications();
+}
+
+function clearNotifications() {
+  state.notifications = [];
+  saveNotifications();
+  updateNotifBadge();
+  renderNotifications();
+}
+
+function setNotifFilter(filter) {
+  state.notifFilter = filter;
+  document.querySelectorAll('.notif-filter').forEach(btn => {
+    btn.classList.toggle('active', btn.id === (filter === 'all' ? 'filterNotifAll' : 'filterNotifUnread'));
+  });
+  renderNotifications();
+}
+
+function saveNotifications() {
+  localStorage.setItem('mm_notifications', JSON.stringify(state.notifications.slice(0, 50)));
 }
 
 function switchView(view, btn) {
