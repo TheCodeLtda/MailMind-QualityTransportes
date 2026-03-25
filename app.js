@@ -66,6 +66,118 @@ function showNotif(type,icon,text) {
 }
 
 // ============================================================
+// NOTIFICATION CENTER LOGIC
+// ============================================================
+function toggleNotificationCenter() {
+  const center = document.getElementById('notifCenter');
+  center.classList.toggle('open');
+  if (center.classList.contains('open')) {
+    renderNotifications();
+    // Fecha ao clicar fora
+    setTimeout(() => {
+      const closeHandler = (e) => {
+        if (!center.contains(e.target) && !document.getElementById('notifBellBtn').contains(e.target)) {
+          center.classList.remove('open');
+          document.removeEventListener('click', closeHandler);
+        }
+      };
+      document.addEventListener('click', closeHandler);
+    }, 10);
+  }
+}
+
+function addNotification(type, title, message, emailId = null) {
+  const notif = {
+    id: 'nt-' + Date.now() + Math.random().toString(36).substr(2, 5),
+    type, // 'info', 'ai', 'mail'
+    title,
+    message,
+    emailId,
+    time: new Date(),
+    read: false
+  };
+  state.notifications.unshift(notif);
+  if (state.notifications.length > 50) state.notifications.pop();
+  updateNotifBadge();
+  if (document.getElementById('notifCenter').classList.contains('open')) renderNotifications();
+}
+
+function updateNotifBadge() {
+  const unreadCount = state.notifications.filter(n => !n.read).length;
+  const badge = document.getElementById('notifBadge');
+  if (unreadCount > 0) {
+    badge.textContent = unreadCount > 9 ? '9+' : unreadCount;
+    badge.style.display = 'flex';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function renderNotifications() {
+  const list = document.getElementById('notifList');
+  const filter = state.notifFilter || 'all';
+  let items = state.notifications;
+  
+  if (filter === 'unread') items = items.filter(n => !n.read);
+
+  if (items.length === 0) {
+    list.innerHTML = `<div class="notif-empty">Nenhuma notificação por aqui.</div>`;
+    return;
+  }
+
+  list.innerHTML = items.map(n => `
+    <div class="notif-item ${n.read ? 'read' : ''}" onclick="markNotifRead('${n.id}')">
+      <div class="notif-icon">${n.type === 'ai' ? '✨' : n.type === 'mail' ? '📩' : '🔔'}</div>
+      <div class="notif-content">
+        <div class="notif-title">${escHtml(n.title)}</div>
+        <div class="notif-message">${escHtml(n.message)}</div>
+        <div class="notif-time">${formatRelativeDate(n.time)}</div>
+        <div class="notif-item-actions">
+          ${n.emailId ? `<button class="notif-action-btn" onclick="event.stopPropagation();notifActionSummarize('${n.emailId}')">Resumo IA</button>` : ''}
+          ${n.emailId ? `<button class="notif-action-btn" onclick="event.stopPropagation();selectEmail('${n.emailId}')">Ver e-mail</button>` : ''}
+        </div>
+      </div>
+      ${!n.read ? `<div class="notif-unread-dot"></div>` : ''}
+    </div>
+  `).join('');
+}
+
+function setNotifFilter(filter) {
+  state.notifFilter = filter;
+  document.getElementById('filterNotifAll').classList.toggle('active', filter === 'all');
+  document.getElementById('filterNotifUnread').classList.toggle('active', filter === 'unread');
+  renderNotifications();
+}
+
+function markNotifRead(id) {
+  const n = state.notifications.find(not => not.id === id);
+  if (n) { n.read = true; updateNotifBadge(); renderNotifications(); }
+}
+
+function markAllNotifsRead() {
+  state.notifications.forEach(n => n.read = true);
+  updateNotifBadge();
+  renderNotifications();
+}
+
+function clearNotifications() {
+  state.notifications = [];
+  updateNotifBadge();
+  renderNotifications();
+}
+
+async function notifActionSummarize(emailId) {
+  const email = state.emails.find(e => e.id === emailId);
+  if (email) {
+    selectEmail(emailId);
+    setTimeout(() => summarizeSelected(), 100);
+    document.getElementById('notifCenter').classList.remove('open');
+  } else {
+    showNotif('error', '❌', 'E-mail não encontrado na lista atual.');
+  }
+}
+
+// ============================================================
 // STATE
 // ============================================================
 const state = {
@@ -74,6 +186,8 @@ const state = {
   currentView:'emails', rules:[], config:{}, chatHistory:[],
   page: { current:1, nextLink:null, prevLinks:[], total:null, pageSize:50 },
   outlookFolders: [],
+  notifications: [],
+  notifFilter: 'all',
   useOutlookFolders: false,
   folderCache: {}, // Cache de IDs de pastas para performance
   customFilters: [], // Filtros personalizados da barra superior
@@ -1461,6 +1575,7 @@ async function classifyAllEmails() {
         actionSummary[matchedRule.name] = (actionSummary[matchedRule.name] || 0) + 1;
 
         if(state.connected && state.accessToken){
+          addNotification('ai', 'Classificação Automática', `E-mail "${email.subject.substring(0,20)}..." movido para ${folder}`, email.id);
           await moveEmail(email.id, folder);
           // Executa ação automática da regra correspondente (se houver)
           if (matchedRule.action && matchedRule.action !== 'none') await executeRuleAction(email, matchedRule);
@@ -2687,6 +2802,7 @@ async function checkNewEmails() {
     state.emails = [...toAdd, ...state.emails];
     state.filteredEmails = [...toAdd, ...state.filteredEmails];
 
+    toAdd.forEach(e => addNotification('mail', 'Novo E-mail', e.subject, e.id));
     renderEmailList();
     updateUnreadBadge();
     renderPagination();
