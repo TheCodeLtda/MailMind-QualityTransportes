@@ -2613,13 +2613,21 @@ async function applyFilterToolSearch() {
   const filter = updateGeneratedFilter();
   if (!filter) { showNotif('error', '❌', 'Adicione pelo menos um valor de filtro'); return; }
 
-  // IMPORTANTE: Removemos o &$orderby para evitar o erro 400 (ConsistencyLevel restriction)
-  // O Microsoft Graph exige que o campo de ordenação esteja no filtro em buscas avançadas.
-  // Para pesquisas personalizadas, a ordem natural (ou remoção do orderby) resolve o Bad Request.
   const url = `https://graph.microsoft.com/v1.0/me/messages?$top=50&$filter=${encodeURIComponent(filter)}&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance,conversationId&$count=true`;
   
   document.getElementById('filterToolModal').classList.remove('open');
-  switchView('emails', document.querySelector('.nav-item')); // Volta para a lista de emails
+
+  // RESET DE ESTADO: Limpa o contexto de pasta para permitir exibição global
+  state.currentFolder = null; 
+  state.currentFilter = 'all';
+  
+  // UI: Remove destaques de pastas e navegação
+  document.querySelectorAll('.nav-item, .folder-item').forEach(el => el.classList.remove('active', 'active-folder'));
+  document.querySelectorAll('.filter-chip').forEach(c => c.classList.toggle('active', c.textContent === 'Todos'));
+  
+  // Alterna para a visualização de e-mails sem marcar nenhum botão como ativo
+  switchView('emails', null); 
+  
   document.getElementById('panelTitle').textContent = "Resultado do Filtro";
   
   fetchEmails(url);
