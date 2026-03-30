@@ -2532,6 +2532,84 @@ async function checkNewEmails() {
 }
 
 // ============================================================
+// FERRAMENTA DE FILTRO (TOOL: montarFiltroEmail)
+// ============================================================
+function openFilterToolModal() {
+  const container = document.getElementById('filterRowsContainer');
+  container.innerHTML = '';
+  addFilterToolRow(); // Começa com uma linha
+  document.getElementById('filterToolModal').classList.add('open');
+}
+
+function addFilterToolRow() {
+  const container = document.getElementById('filterRowsContainer');
+  const div = document.createElement('div');
+  div.className = 'form-group filter-tool-row';
+  div.style = "display:grid; grid-template-columns: 1fr 1fr 1fr auto; gap:8px; margin-bottom:12px; align-items:end;";
+  
+  div.innerHTML = `
+    <div>
+      <label class="form-label">Campo</label>
+      <select class="form-select field-select" onchange="updateGeneratedFilter()">
+        <option value="subject">subject</option>
+        <option value="from/emailAddress/address">from/emailAddress/address</option>
+        <option value="receivedDateTime">receivedDateTime</option>
+        <option value="hasAttachments">hasAttachments</option>
+      </select>
+    </div>
+    <div>
+      <label class="form-label">Operador</label>
+      <select class="form-select op-select" onchange="updateGeneratedFilter()">
+        <option value="eq">eq (Igual)</option>
+        <option value="ne">ne (Diferente)</option>
+        <option value="contains">contains (Contém)</option>
+        <option value="ge">ge (Maior ou Igual)</option>
+        <option value="le">le (Menor ou Igual)</option>
+      </select>
+    </div>
+    <div>
+      <label class="form-label">Valor</label>
+      <input type="text" class="form-input val-input" placeholder="Valor..." oninput="updateGeneratedFilter()">
+    </div>
+    <button class="rule-menu-btn" onclick="this.parentElement.remove(); updateGeneratedFilter();" style="height:38px; color:var(--danger);">✕</button>
+  `;
+  container.appendChild(div);
+  updateGeneratedFilter();
+}
+
+function updateGeneratedFilter() {
+  const rows = document.querySelectorAll('.filter-tool-row');
+  const filtros = [];
+  
+  rows.forEach(row => {
+    const campo = row.querySelector('.field-select').value;
+    const operador = row.querySelector('.op-select').value;
+    const valor = row.querySelector('.val-input').value;
+    
+    if (valor.trim() !== "") {
+      filtros.push({ campo, operador, valor });
+    }
+  });
+
+  const result = filtros.length > 0 ? montarFiltroEmail(filtros) : "(Aguardando condições...)";
+  document.getElementById('generatedFilterString').textContent = result;
+  return filtros.length > 0 ? result : null;
+}
+
+async function applyFilterToolSearch() {
+  const filter = updateGeneratedFilter();
+  if (!filter) { showNotif('error', '❌', 'Adicione pelo menos um valor de filtro'); return; }
+
+  const url = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=50&$filter=${encodeURIComponent(filter)}&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance,conversationId&$orderby=receivedDateTime desc`;
+  
+  document.getElementById('filterToolModal').classList.remove('open');
+  switchView('emails', document.querySelector('.nav-item')); // Volta para a lista de emails
+  document.getElementById('panelTitle').textContent = "Resultado do Filtro";
+  
+  fetchEmails(url);
+}
+
+// ============================================================
 // BOOTSTRAP
 // ============================================================
 init();

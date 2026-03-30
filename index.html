@@ -394,6 +394,7 @@
   <div class="config-actions">
     <button class="save-config-btn" onclick="saveConfig()">💾 Salvar Configurações</button>
     <button class="setup-btn-back" onclick="testGeminiConnection()">🧪 Testar Conexão</button>
+    <button class="action-btn" onclick="openFilterToolModal()" style="border-color:var(--blue); color:var(--blue);">🔍 Pesquisa Avançada ($filter)</button>
     <button class="reset-config-btn" onclick="resetConfig()">🗑 Limpar e Reiniciar Setup</button>
   </div>
 </div>
@@ -470,6 +471,36 @@
     <div class="modal-footer">
       <button class="btn-cancel" onclick="document.getElementById('shareFolderModal').classList.remove('open')">Cancelar</button>
       <button class="btn-save" id="shareFolderBtn" onclick="submitShareFolder()">Encaminhar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: FERRAMENTA DE FILTRO ($filter) -->
+<div class="modal-overlay" id="filterToolModal">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-title">Ferramenta de Filtro Graph API</div>
+    <div class="modal-sub">Gere e teste strings de $filter dinamicamente.</div>
+
+    <div id="filterRowsContainer">
+      <!-- Linhas de filtro adicionadas dinamicamente -->
+    </div>
+
+    <button class="add-rule-btn" onclick="addFilterToolRow()" style="margin-bottom:20px">+ Adicionar Condição (AND)</button>
+
+    <div class="form-group">
+      <label class="form-label">Query Gerada ($filter):</label>
+      <div id="generatedFilterString" style="background:var(--surface2); padding:10px; border-radius:8px; font-family:var(--font-mono); font-size:12px; word-break:break-all; border:1px solid var(--border2); color:var(--accent);">
+        (Aguardando condições...)
+      </div>
+    </div>
+
+    <div class="setup-hint">
+      💡 <strong>Dica:</strong> Para datas, use o formato ISO (ex: 2024-01-01). Para booleans, use true ou false.
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="document.getElementById('filterToolModal').classList.remove('open')">Fechar</button>
+      <button class="btn-save" onclick="applyFilterToolSearch()">Executar Pesquisa</button>
     </div>
   </div>
 </div>

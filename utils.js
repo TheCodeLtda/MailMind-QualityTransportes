@@ -46,3 +46,40 @@ function getAttachIcon(filename) {
   const map={pdf:'📄',doc:'📝',docx:'📝',xls:'📊',xlsx:'📊',zip:'🗜️',jpg:'🖼️',png:'🖼️',mp4:'🎬',txt:'📃'};
   return map[ext]||'📎';
 }
+
+/**
+ * Gera queries utilizando o parâmetro $filter da API Microsoft Graph
+ * @param {Object|Object[]} input - Objeto ou Array de objetos { campo, operador, valor }
+ * @returns {string} String formatada para o $filter
+ */
+function montarFiltroEmail(input) {
+  const filtros = Array.isArray(input) ? input : [input];
+  const validFields = ['receivedDateTime', 'from/emailAddress/address', 'hasAttachments', 'subject'];
+
+  const query = filtros.map(f => {
+    const { campo, operador, valor } = f;
+
+    // Validação de campos (Requisito 4)
+    if (!validFields.includes(campo)) {
+      console.warn(`Campo "${campo}" não está na lista de campos validados.`);
+    }
+
+    let v = valor;
+    // Formatação de valores (Requisitos 5, 6 e 7)
+    if (campo === 'receivedDateTime') {
+      v = valor; // Data: Sem aspas
+    } else if (typeof valor === 'boolean' || valor === 'true' || valor === 'false') {
+      v = valor; // Boolean: Sem aspas
+    } else {
+      v = `'${valor}'`; // String: Aspas simples
+    }
+
+    // Suporte ao operador contains (OData syntax)
+    if (operador === 'contains') {
+      return `contains(${campo}, ${v})`;
+    }
+    return `${campo} ${operador} ${v}`;
+  }).join(' and '); // Suporte a múltiplos filtros (Requisito 3)
+
+  return query;
+}
