@@ -933,12 +933,19 @@ async function fetchEmails(url) {
   if(!state.accessToken){showNotif('error','❌','Conecte sua conta Outlook primeiro');return;}
   showStatus('Carregando e-mails...');
   try {
+    const headers = {
+      Authorization:`Bearer ${state.accessToken}`,
+      'Content-Type':'application/json',
+      'Prefer':'outlook.body-content-type="html"',
+    };
+
+    // Requisito para buscas avançadas com $filter e $orderby
+    if (url && url.includes('$filter')) {
+      headers['ConsistencyLevel'] = 'eventual';
+    }
+
     const res=await fetch(url||BASE_URL, {
-      headers:{
-        Authorization:`Bearer ${state.accessToken}`,
-        'Content-Type':'application/json',
-        'Prefer':'outlook.body-content-type="html"',
-      }
+      headers: headers
     });
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const data=await res.json();
@@ -946,6 +953,11 @@ async function fetchEmails(url) {
     state.emails         = data.value.map(buildEmailObj);
     state.filteredEmails = [...state.emails];
     state.page.nextLink  = data['@odata.nextLink'] || null;
+    
+    // Se a API retornar o contador total na busca avançada, atualizamos o estado
+    if (data['@odata.count'] !== undefined) {
+      state.page.total = data['@odata.count'];
+    }
     
     // Atualiza estatísticas das pastas sempre que carregar e-mails (para ter contadores reais atualizados)
     if (state.accessToken) {
@@ -2600,7 +2612,8 @@ async function applyFilterToolSearch() {
   const filter = updateGeneratedFilter();
   if (!filter) { showNotif('error', '❌', 'Adicione pelo menos um valor de filtro'); return; }
 
-  const url = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=50&$filter=${encodeURIComponent(filter)}&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance,conversationId&$orderby=receivedDateTime desc`;
+  // Adicionado &$count=true para suportar o ConsistencyLevel eventual exigido pelo $filter
+  const url = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=50&$filter=${encodeURIComponent(filter)}&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance,conversationId&$orderby=receivedDateTime desc&$count=true`;
   
   document.getElementById('filterToolModal').classList.remove('open');
   switchView('emails', document.querySelector('.nav-item')); // Volta para a lista de emails
