@@ -190,6 +190,24 @@ body {
   display: flex; align-items: center; gap: 8px; background: var(--surface2);
   border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px;
 }
+
+.search-scope-select {
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text3);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  outline: none;
+  padding-right: 8px;
+  margin-right: 4px;
+  cursor: pointer;
+  max-width: 120px;
+}
+.search-scope-select:hover { color: var(--accent); }
+
 .search-box input {
   background: none; border: none; outline: none; color: var(--text);
   font-family: var(--font-body); font-size: 13px; flex: 1;

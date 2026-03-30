@@ -939,8 +939,8 @@ async function fetchEmails(url) {
       'Prefer':'outlook.body-content-type="html"',
     };
 
-    // Requisito para buscas avançadas com $filter e $orderby
-    if (url && url.includes('$filter')) {
+    // Requisito para buscas avançadas com $filter, $search e $orderby
+    if (url && (url.includes('$filter') || url.includes('$search'))) {
       headers['ConsistencyLevel'] = 'eventual';
     }
 

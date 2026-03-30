@@ -201,8 +201,11 @@
     <div class="panel-header">
       <div class="panel-title" id="panelTitle">Caixa de Entrada</div>
       <div class="search-box">
-        <span style="font-size:14px;color:var(--text3)">🔍</span>
-        <input type="text" placeholder="Buscar e-mails..." id="searchInput" oninput="filterEmails()"/>
+        <select id="searchScope" class="search-scope-select" onchange="filterEmails()">
+          <option value="all" selected>Todas as Pastas</option>
+          <option value="current">Pasta Atual</option>
+        </select>
+        <input type="text" placeholder="Buscar e-mails..." id="searchInput" oninput="filterEmails()" onkeydown="handleSearchKey(event)" onfocus="updateSearchScope()"/>
       </div>
     </div>
     <div class="filter-bar">
