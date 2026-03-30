@@ -2616,7 +2616,7 @@ async function applyFilterToolSearch() {
   // IMPORTANTE: Removemos o &$orderby para evitar o erro 400 (ConsistencyLevel restriction)
   // O Microsoft Graph exige que o campo de ordenação esteja no filtro em buscas avançadas.
   // Para pesquisas personalizadas, a ordem natural (ou remoção do orderby) resolve o Bad Request.
-  const url = `https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=50&$filter=${encodeURIComponent(filter)}&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance,conversationId&$count=true`;
+  const url = `https://graph.microsoft.com/v1.0/me/messages?$top=50&$filter=${encodeURIComponent(filter)}&$select=id,subject,from,toRecipients,ccRecipients,bodyPreview,body,receivedDateTime,isRead,hasAttachments,importance,conversationId&$count=true`;
   
   document.getElementById('filterToolModal').classList.remove('open');
   switchView('emails', document.querySelector('.nav-item')); // Volta para a lista de emails
