@@ -74,10 +74,11 @@ function montarFiltroEmail(input) {
       v = `'${valor}'`; // String: Aspas simples
     }
 
-    // Suporte ao operador contains (OData syntax)
-    if (operador === 'contains') {
-      return `contains(${campo}, ${v})`;
+    // Suporte aos operadores funcionais (OData syntax sem espaços internos)
+    if (operador === 'contains' || operador === 'startsWith') {
+      return `${operador}(${campo},${v})`;
     }
+    
     return `${campo} ${operador} ${v}`;
   }).join(' and '); // Suporte a múltiplos filtros (Requisito 3)
 
